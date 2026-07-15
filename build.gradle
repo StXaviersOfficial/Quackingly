@@ -13,18 +13,13 @@ base {
 repositories {
     mavenCentral()
     maven { url = 'https://maven.fabricmc.net/' }
-    // Modrinth maven — used for Carpet (maven.kosma.dev has a broken cert) and the SVC compile-time symbols
+    // Modrinth maven — used for Carpet, Mod Menu (terraformers maven is flaky), and the SVC compile-time symbols
     maven {
         name = 'Modrinth'
         url = 'https://api.modrinth.com/maven'
         content {
             includeGroup 'maven.modrinth'
         }
-    }
-    // Mod Menu (TerraformersMC)
-    maven {
-        name = 'TerraformersMC'
-        url = 'https://maven.terraformersmc.com/releases/'
     }
     // Cloth Config
     maven {
@@ -53,8 +48,9 @@ dependencies {
     // Simple Voice Chat — compile against the API only (users install SVC separately at runtime)
     modCompileOnly "de.maxhenkel.voicechat:voicechat-api:${project.simple_voice_chat_version}"
 
-    // Mod Menu — config screen entrypoint
-    modImplementation "com.terraformersmc:modmenu:${project.modmenu_version}"
+    // Mod Menu — pulled from Modrinth (terraformers maven is flaky).
+    // Same content, just a more reliable download source.
+    modImplementation "maven.modrinth:modmenu:${project.modmenu_version}"
 
     // Cloth Config — config file backend
     modImplementation "me.shedaniel.cloth:cloth-config-fabric:${project.cloth_config_version}"
