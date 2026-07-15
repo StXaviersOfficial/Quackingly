@@ -13,14 +13,29 @@ base {
 repositories {
     mavenCentral()
     maven { url = 'https://maven.fabricmc.net/' }
-    // Carpet
-    maven { url = 'https://maven.kosma.dev/maven' }
-    // Simple Voice Chat
-    maven { url = 'https://maven.maxhenkel.de/repository/public' }
+    // Modrinth maven — used as fallback for Carpet (maven.kosma.dev has a broken cert)
+    maven {
+        name = 'Modrinth'
+        url = 'https://api.modrinth.com/maven'
+        content {
+            includeGroup 'maven.modrinth'
+        }
+    }
+    // Simple Voice Chat API — official Max Henkel maven
+    maven {
+        name = 'MaxHenkel'
+        url = 'https://maven.maxhenkel.de/repository/public'
+    }
     // Mod Menu (TerraformersMC)
-    maven { url = 'https://maven.terraformersmc.com/releases/' }
+    maven {
+        name = 'TerraformersMC'
+        url = 'https://maven.terraformersmc.com/releases/'
+    }
     // Cloth Config
-    maven { url = 'https://maven.shedaniel.me/' }
+    maven {
+        name = 'Shedaniel'
+        url = 'https://maven.shedaniel.me/'
+    }
 }
 
 dependencies {
@@ -32,13 +47,13 @@ dependencies {
     // Fabric API
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
-    // Carpet mod — fake player system (battle-tested, used by AI Player mod)
-    modImplementation "carpet:fabric-carpet:${project.minecraft_version}-${project.carpet_version}"
+    // Carpet mod — pulled from Modrinth (slug: carpet)
+    modImplementation "maven.modrinth:carpet:${project.minecraft_version}-${project.carpet_version}"
 
-    // Simple Voice Chat API — mic input capture + positional audio playback
-    modImplementation "de.maxhenkel.voicechat:voicechat-api:${project.simple_voice_chat_version}"
-    // We use modCompileOnly for the voicechat impl since users will install SVC separately
-    modCompileOnly "de.maxhenkel.voicechat:voicechat:${project.simple_voice_chat_version}:api"
+    // Simple Voice Chat API — compile-only against the API jar; users install the full SVC mod separately
+    modCompileOnly "de.maxhenkel.voicechat:voicechat-api:${project.simple_voice_chat_version}"
+    // The full voicechat impl is required at runtime only (users install it). We mark it as a
+    // "suggests" dependency in fabric.mod.json instead of bundling.
 
     // Mod Menu — config screen entrypoint
     modImplementation "com.terraformersmc:modmenu:${project.modmenu_version}"
