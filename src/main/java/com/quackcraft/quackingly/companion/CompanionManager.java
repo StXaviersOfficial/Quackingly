@@ -110,8 +110,7 @@ public class CompanionManager {
                         pos,
                         host.getYaw(), 0f,
                         host.getWorld().getRegistryKey(),
-                        GameMode.SURVIVAL,
-                        false /* don't broadcast join message */);
+                        GameMode.SURVIVAL);
                 if (fakePlayer == null) return false;
                 SkinApplier.applyDefaultSkin(fakePlayer);
                 return true;
