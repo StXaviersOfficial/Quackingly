@@ -104,14 +104,22 @@ public class CompanionManager {
             if (server == null) return false;
             try {
                 Vec3d pos = new Vec3d(host.getX() + 1, host.getY(), host.getZ() + 1);
-                fakePlayer = EntityPlayerMPFake.createFake(
+                // Carpet's createFake returns void in 1.4.147 (8-arg overload); the player is
+                // added to the server during the call. We then look it up by name.
+                EntityPlayerMPFake.createFake(
                         "Quackingly",
                         server,
                         pos,
                         host.getYaw(), 0f,
                         host.getWorld().getRegistryKey(),
-                        GameMode.SURVIVAL);
-                if (fakePlayer == null) return false;
+                        GameMode.SURVIVAL,
+                        false);
+                // Look up the freshly-spawned fake player by name
+                fakePlayer = (EntityPlayerMPFake) server.getPlayerManager().getPlayer("Quackingly");
+                if (fakePlayer == null) {
+                    Quackingly.LOGGER.warn("Quackingly spawn call returned but player lookup failed.");
+                    return false;
+                }
                 SkinApplier.applyDefaultSkin(fakePlayer);
                 return true;
             } catch (Throwable t) {
