@@ -33,7 +33,10 @@ public class ClientCompanionPackets {
         public static final CustomPayload.Id<ChatToCompanionPayload> ID =
                 new CustomPayload.Id<>(Identifier.of(Quackingly.MOD_ID, "chat_to_companion"));
         public static final PacketCodec<RegistryByteBuf, ChatToCompanionPayload> CODEC =
-                PacketCodecs.STRING.xmap(ChatToCompanionPayload::new, ChatToCompanionPayload::text);
+                PacketCodec.tuple(
+                        PacketCodecs.STRING,
+                        ChatToCompanionPayload::text,
+                        ChatToCompanionPayload::new);
         @Override public CustomPayload.Id<? extends CustomPayload> getId() { return ID; }
         public String text() { return text; }
     }
