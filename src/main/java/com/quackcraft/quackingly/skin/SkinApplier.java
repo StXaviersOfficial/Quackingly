@@ -9,6 +9,8 @@ import net.minecraft.entity.player.PlayerEntity;
 
 import java.util.UUID;
 
+import com.quackcraft.quackingly.skin.SkinLoader.FetchedSkin;
+
 /**
  * Applies a Mojang-fetched skin to a Carpet fake player.
  *

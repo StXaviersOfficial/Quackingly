@@ -4,7 +4,7 @@ import com.quackcraft.quackingly.Quackingly;
 import de.maxhenkel.voicechat.api.VoicechatApi;
 import de.maxhenkel.voicechat.api.VoicechatPlugin;
 import de.maxhenkel.voicechat.api.events.EventRegistration;
-import de.maxhenkel.voicechat.api.events.MicPacketEvent;
+import de.maxhenkel.voicechat.api.events.MicrophonePacketEvent;
 import de.maxhenkel.voicechat.api.opus.OpusDecoder;
 import de.maxhenkel.voicechat.api.opus.OpusEncoder;
 
@@ -43,10 +43,10 @@ public class QuackinglyVoiceChatPlugin implements VoicechatPlugin {
 
     @Override
     public void registerEvents(EventRegistration registration) {
-        registration.registerEvent(MicPacketEvent.class, QuackinglyVoiceChatPlugin::onMicPacket);
+        registration.registerEvent(MicrophonePacketEvent.class, QuackinglyVoiceChatPlugin::onMicPacket);
     }
 
-    private static void onMicPacket(MicPacketEvent event) {
+    private static void onMicPacket(MicrophonePacketEvent event) {
         if (!recording.get()) return;
         if (collector == null) {
             collector = new MicPacketCollector(api.createOpusDecoder());

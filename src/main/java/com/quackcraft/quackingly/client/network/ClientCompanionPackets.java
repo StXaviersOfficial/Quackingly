@@ -2,7 +2,6 @@ package com.quackcraft.quackingly.client.network;
 
 import com.quackcraft.quackingly.Quackingly;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.fabricmc.fabric.api.networking.v1.PayloadType;
 import net.minecraft.network.RegistryByteBuf;
 import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.packet.CustomPayload;
