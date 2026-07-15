@@ -1,8 +1,8 @@
 package com.quackcraft.quackingly.client.screen;
 
-import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.screen.world.SelectWorldScreen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
@@ -16,12 +16,15 @@ import java.io.File;
  *
  * On "Confirm", we:
  *   1. Save the chosen mode into QuackinglyConfig (persists for next session).
- *   2. Hand off to the vanilla "load world" code path by simulating what
- *      net.minecraft.client.gui.screen.world.WorldListWidget.WorldEntry does:
- *      we call LevelStorageSession.create + LevelLoadingScreen.
+ *   2. Hand off to the vanilla SelectWorldScreen. The user clicks Play on their
+ *      world in the vanilla list — Quackingly's mode is already saved, so when
+ *      the world loads and the user presses K to summon him, he'll use the
+ *      chosen mode.
  *
- * For resilience we wrap the load in try/catch — if vanilla internals shift,
- * the screen shows an error instead of crashing the client.
+ * Why we don't directly launch the world: vanilla's LevelLoadingScreen +
+ * LevelStorage.Session APIs differ between MC versions and are easy to break.
+ * Handing off to the vanilla world-select screen is rock-solid across versions
+ * and still gets the user where they want to go in one extra click.
  */
 public class ModeSelectScreen extends Screen {
     private final Screen parent;
@@ -56,14 +59,11 @@ public class ModeSelectScreen extends Screen {
                 .dimensions(cx + 20, cy - 30, 180, 40)
                 .build());
 
-        // Description
-        // (drawn in render())
-
         // Confirm
         addDrawableChild(ButtonWidget.builder(
                         Text.translatable("screen.quackingly.button.play")
                                 .copy().formatted(Formatting.AQUA, Formatting.BOLD),
-                        b -> launchWorld())
+                        b -> confirmAndLaunch())
                 .dimensions(cx - 100, cy + 80, 200, 20)
                 .build());
 
@@ -75,29 +75,16 @@ public class ModeSelectScreen extends Screen {
                 .build());
     }
 
-    private void launchWorld() {
-        try {
-            com.quackcraft.quackingly.config.QuackinglyConfig.get().defaultMode = selectedMode;
-            com.quackcraft.quackingly.config.QuackinglyConfig.save();
+    private void confirmAndLaunch() {
+        // Save the chosen mode
+        com.quackcraft.quackingly.config.QuackinglyConfig.get().defaultMode = selectedMode;
+        com.quackcraft.quackingly.config.QuackinglyConfig.save();
 
-            // Hand off to vanilla world loading — this is the same code path that
-            // WorldListWidget.WorldEntry#play uses. Wrapped to keep us crash-safe.
-            net.minecraft.client.MinecraftClient mc = net.minecraft.client.MinecraftClient.getInstance();
-            net.minecraft.world.level.storage.LevelStorage storage = mc.getLevelStorage();
-            net.minecraft.world.level.storage.LevelStorage.Session session =
-                    storage.createSession(worldDir.getName());
-
-            net.minecraft.client.gui.screen.LevelLoadingScreen loading =
-                    new net.minecraft.client.gui.screen.LevelLoadingScreen(
-                            mc.createIntegratedServerLoader().createAndStart(
-                                    session, mc.isDemo(), mc.getClientLevelSource()));
-            mc.setScreen(loading);
-        } catch (Throwable t) {
-            com.quackcraft.quackingly.Quackingly.LOGGER.error("Failed to launch world from Quackingly picker", t);
-            // Fallback: send user to vanilla world picker
-            if (client != null) {
-                client.setScreen(new net.minecraft.client.gui.screen.world.SelectWorldScreen(parent));
-            }
+        // Hand off to vanilla world-select screen — user clicks their world there.
+        // This is the most robust path across MC versions and avoids fragile calls
+        // into LevelStorage.Session / LevelLoadingScreen internals.
+        if (client != null) {
+            client.setScreen(new SelectWorldScreen(parent));
         }
     }
 
@@ -108,7 +95,7 @@ public class ModeSelectScreen extends Screen {
                 this.title.copy().formatted(Formatting.AQUA),
                 width / 2, 20, 0xFFFFFFFF);
 
-        // Selected-mode indicator
+        // Selected-mode indicator + description
         String desc = selectedMode.equals("unhinged")
                 ? "Sarcastic, brutally honest, no filter. Roasts you. Chat-tone only."
                 : "Helpful, caring, friendly. Verity without the horror.";
@@ -118,6 +105,10 @@ public class ModeSelectScreen extends Screen {
         ctx.drawCenteredTextWithShadow(textRenderer,
                 Text.literal(desc).formatted(Formatting.GRAY),
                 width / 2, height / 2 + 20, 0xFFFFFFFF);
+        ctx.drawCenteredTextWithShadow(textRenderer,
+                Text.literal("After Play: pick your world in the vanilla list and press K in-game to summon.")
+                        .formatted(Formatting.DARK_GRAY),
+                width / 2, height / 2 + 50, 0xFFFFFFFF);
 
         super.render(ctx, mouseX, mouseY, delta);
     }

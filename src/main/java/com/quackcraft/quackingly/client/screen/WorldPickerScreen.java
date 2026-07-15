@@ -50,10 +50,10 @@ public class WorldPickerScreen extends Screen {
             y += 24;
         }
 
-        // Create New World
+        // Create New World — CreateWorldScreen.create() opens the screen itself
         addDrawableChild(ButtonWidget.builder(
                         Text.translatable("screen.quackingly.button.create_new"),
-                        b -> client.setScreen(net.minecraft.client.gui.screen.world.CreateWorldScreen.create(client, this)))
+                        b -> net.minecraft.client.gui.screen.world.CreateWorldScreen.create(client, this))
                 .dimensions(width / 2 - 200, y + 10, 400, 20)
                 .build());
 

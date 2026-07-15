@@ -14,6 +14,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
+import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.GameMode;
 
 import java.util.UUID;
@@ -102,10 +103,11 @@ public class CompanionManager {
         public boolean spawn() {
             if (server == null) return false;
             try {
+                Vec3d pos = new Vec3d(host.getX() + 1, host.getY(), host.getZ() + 1);
                 fakePlayer = EntityPlayerMPFake.createFake(
                         "Quackingly",
                         server,
-                        host.getX() + 1, host.getY(), host.getZ() + 1,
+                        pos,
                         host.getYaw(), 0f,
                         GameMode.SURVIVAL);
                 if (fakePlayer == null) return false;
@@ -158,10 +160,10 @@ public class CompanionManager {
         private String describeWorld(ServerPlayerEntity p) {
             try {
                 return String.format("Near %s at (%.0f, %.0f, %.0f), %s, time %d",
-                        p.world.getRegistryKey().getValue(),
+                        p.getWorld().getRegistryKey().getValue(),
                         p.getX(), p.getY(), p.getZ(),
-                        p.world.isNight() ? "night" : "day",
-                        p.world.getTimeOfDay() % 24000);
+                        p.getWorld().isNight() ? "night" : "day",
+                        p.getWorld().getTimeOfDay() % 24000);
             } catch (Throwable t) {
                 return "in Minecraft";
             }

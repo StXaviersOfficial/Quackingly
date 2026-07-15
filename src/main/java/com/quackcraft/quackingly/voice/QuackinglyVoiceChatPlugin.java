@@ -4,30 +4,25 @@ import com.quackcraft.quackingly.Quackingly;
 import de.maxhenkel.voicechat.api.VoicechatApi;
 import de.maxhenkel.voicechat.api.VoicechatPlugin;
 import de.maxhenkel.voicechat.api.events.EventRegistration;
-import de.maxhenkel.voicechat.api.events.MicrophonePacketEvent;
-import de.maxhenkel.voicechat.api.opus.OpusDecoder;
-import de.maxhenkel.voicechat.api.opus.OpusEncoder;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Simple Voice Chat plugin for Quackingly.
  *
- * Hooks the mic-packet event so that when the user holds the push-to-talk key
- * (set in QuackinglyClient), we accumulate Opus-encoded audio frames, decode
- * them to PCM, and ship the PCM buffer to Groq's Whisper STT endpoint when
- * the user releases the key.
+ * v1.0 — stub. We register as an SVC plugin so SVC knows we exist, and we expose
+ * start/stop recording state for future use. The actual Opus decode + Groq Whisper
+ * STT pipeline is being implemented incrementally — for v1.0 users can chat with
+ * Quackingly via the in-game text chat and /quack commands.
  *
- * The companion's reply is then TTS-synthesised via OpenAI and fed back into
- * SVC's locational audio API to play at the companion's position.
- *
- * SVC requires the plugin class to be listed in fabric.mod.json's
- * "custom": { "voicechat:plugin": "..." } entry. We've done that.
+ * Future versions will hook MicrophonePacketEvent to capture audio when the
+ * push-to-talk key is held, decode Opus -> PCM -> WAV, and ship the WAV to Groq
+ * Whisper for transcription. The reply is then TTS-synthesised via OpenAI and
+ * played back at the companion's position via SVC's locational audio API.
  */
 public class QuackinglyVoiceChatPlugin implements VoicechatPlugin {
 
     private static final AtomicBoolean recording = new AtomicBoolean(false);
-    private static MicPacketCollector collector;
     private static VoicechatApi api;
 
     @Override
@@ -43,42 +38,20 @@ public class QuackinglyVoiceChatPlugin implements VoicechatPlugin {
 
     @Override
     public void registerEvents(EventRegistration registration) {
-        registration.registerEvent(MicrophonePacketEvent.class, QuackinglyVoiceChatPlugin::onMicPacket);
+        // v1.0: no event handlers registered yet.
+        // v1.1 will register MicrophonePacketEvent + LocationSoundEvent handlers
+        // to capture player mic input and play back Quackingly's TTS audio.
     }
 
-    private static void onMicPacket(MicrophonePacketEvent event) {
-        if (!recording.get()) return;
-        if (collector == null) {
-            collector = new MicPacketCollector(api.createOpusDecoder());
-        }
-        try {
-            collector.append(event.getPacketBuffer());
-        } catch (Throwable t) {
-            Quackingly.LOGGER.warn("Mic packet collection failed", t);
-        }
-    }
-
-    // Called from QuackinglyClient when the talk key is pressed/released
     public static void startRecording() {
-        if (!recording.compareAndSet(false, true)) return;
-        if (collector != null) collector.close();
-        collector = new MicPacketCollector(api != null ? api.createOpusDecoder() : null);
+        recording.set(true);
     }
 
     public static void stopAndTranscribe() {
-        if (!recording.compareAndSet(true, false)) return;
-        MicPacketCollector c = collector;
-        collector = null;
-        if (c == null) return;
-        try {
-            byte[] wav = c.toWav();
-            ClientVoiceController.handleCapturedAudio(wav);
-        } catch (Throwable t) {
-            Quackingly.LOGGER.warn("Failed to transcribe captured audio", t);
-        } finally {
-            c.close();
-        }
+        recording.set(false);
+        // v1.0: no-op. Future: transcribe captured audio via Groq Whisper.
     }
 
     public static VoicechatApi getApi() { return api; }
+    public static boolean isRecording() { return recording.get(); }
 }

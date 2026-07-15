@@ -57,7 +57,7 @@ public class GroqSTT {
 
         body.write(("--" + boundary + "--" + crlf).getBytes(StandardCharsets.UTF_8));
 
-        HttpResponse<String> resp = HttpUtils.postBytesWithHeaders(
+        HttpResponse<byte[]> resp = HttpUtils.postBytesWithHeaders(
                 "https://api.groq.com/openai/v1/audio/transcriptions",
                 body.toByteArray(),
                 Map.of(
@@ -65,9 +65,10 @@ public class GroqSTT {
                         "Content-Type", "multipart/form-data; boundary=" + boundary));
 
         if (resp.statusCode() >= 400) {
-            throw new RuntimeException("Groq STT HTTP " + resp.statusCode() + ": " + resp.body());
+            throw new RuntimeException("Groq STT HTTP " + resp.statusCode() + ": "
+                    + new String(resp.body(), StandardCharsets.UTF_8));
         }
-        JsonObject json = JsonParser.parseString(resp.body()).getAsJsonObject();
+        JsonObject json = JsonParser.parseString(new String(resp.body(), StandardCharsets.UTF_8)).getAsJsonObject();
         String text = json.has("text") ? json.get("text").getAsString().trim() : "";
         Quackingly.LOGGER.info("[Quackingly] STT result: {}", text);
         return text;
