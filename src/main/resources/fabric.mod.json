@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "id": "quackingly",
+  "version": "${version}",
+  "name": "Quackingly",
+  "description": "A safe, non-horror Verity-style AI companion for Minecraft. Player-model bot (Carpet) with Groq/OpenAI/Anthropic/Gemini LLM, voice via Simple Voice Chat, Mojang skin loading, and Grok-style 'unhinged' chat mode.",
+  "authors": [
+    "StXaviersOfficial"
+  ],
+  "contact": {
+    "homepage": "https://github.com/StXaviersOfficial/Quackingly",
+    "sources": "https://github.com/StXaviersOfficial/Quackingly",
+    "issues": "https://github.com/StXaviersOfficial/Quackingly/issues"
+  },
+  "license": "MIT",
+  "icon": "assets/quackingly/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "com.quackcraft.quackingly.Quackingly"
+    ],
+    "client": [
+      "com.quackcraft.quackingly.QuackinglyClient"
+    ],
+    "modmenu": [
+      "com.quackcraft.quackingly.config.QuackinglyModMenuIntegration"
+    ]
+  },
+  "mixins": [
+    "quackingly.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.1",
+    "java": ">=21",
+    "fabric-api": "*",
+    "carpet": "*",
+    "voicechat": "*"
+  },
+  "suggests": {
+    "modmenu": "*"
+  },
+  "custom": {
+    "quackingly:voicechat_plugin": "com.quackcraft.quackingly.voice.QuackinglyVoiceChatPlugin"
+  }
+}

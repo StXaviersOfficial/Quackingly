@@ -1,0 +1,72 @@
+plugins {
+    id 'fabric-loom' version '1.7-SNAPSHOT'
+    id 'maven-publish'
+}
+
+version = project.mod_version
+group = project.maven_group
+
+base {
+    archivesName = project.archives_base_name
+}
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://maven.fabricmc.net/' }
+    // Carpet
+    maven { url = 'https://maven.kosma.dev/maven' }
+    // Simple Voice Chat
+    maven { url = 'https://maven.maxhenkel.de/repository/public' }
+    // Mod Menu (TerraformersMC)
+    maven { url = 'https://maven.terraformersmc.com/releases/' }
+    // Cloth Config
+    maven { url = 'https://maven.shedaniel.me/' }
+}
+
+dependencies {
+    // Minecraft + Yarn mappings + Fabric Loader
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+
+    // Fabric API
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+
+    // Carpet mod — fake player system (battle-tested, used by AI Player mod)
+    modImplementation "carpet:fabric-carpet:${project.minecraft_version}-${project.carpet_version}"
+
+    // Simple Voice Chat API — mic input capture + positional audio playback
+    modImplementation "de.maxhenkel.voicechat:voicechat-api:${project.simple_voice_chat_version}"
+    // We use modCompileOnly for the voicechat impl since users will install SVC separately
+    modCompileOnly "de.maxhenkel.voicechat:voicechat:${project.simple_voice_chat_version}:api"
+
+    // Mod Menu — config screen entrypoint
+    modImplementation "com.terraformersmc:modmenu:${project.modmenu_version}"
+
+    // Cloth Config — config file backend
+    modImplementation "me.shedaniel.cloth:cloth-config-fabric:${project.cloth_config_version}"
+    include "me.shedaniel.cloth:cloth-config-fabric:${project.cloth_config_version}"
+}
+
+processResources {
+    inputs.property "version", project.version
+    filesMatching("fabric.mod.json") {
+        expand "version": project.version
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = 21
+}
+
+java {
+    withSourcesJar()
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+jar {
+    from("LICENSE") {
+        rename { "${it}_${project.base.archivesName.get()}" }
+    }
+}

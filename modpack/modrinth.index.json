@@ -1,0 +1,64 @@
+{
+  "formatVersion": 1,
+  "game": "minecraft",
+  "versionId": "1.0.0",
+  "name": "Quackingly - Verity-style AI Companion",
+  "files": [
+    {
+      "path": "mods/fabric-api-0.115.1+1.21.1.jar",
+      "hashes": {
+        "sha1": "PLACEHOLDER_FABRIC_API_SHA1",
+        "sha512": "PLACEHOLDER_FABRIC_API_SHA512"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/P7dR8mSH/versions/Qdsa86Eu/fabric-api-0.115.1%2B1.21.1.jar"
+      ],
+      "fileSize": 2200000
+    },
+    {
+      "path": "mods/fabric-carpet1.21.1-1.4.147.jar",
+      "hashes": {
+        "sha1": "PLACEHOLDER_CARPET_SHA1"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/TQTTVgYE/versions/Pf5pt4il/fabric-carpet1.21.1-1.4.147.jar"
+      ],
+      "fileSize": 1500000
+    },
+    {
+      "path": "mods/voicechat-fabric-1.21.1-2.5.21.jar",
+      "hashes": {
+        "sha1": "PLACEHOLDER_SVC_SHA1"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/9eGKb6K1/versions/4IigFSYb/voicechat-fabric-1.21.1-2.5.21.jar"
+      ],
+      "fileSize": 7500000
+    },
+    {
+      "path": "mods/modmenu-11.0.2.jar",
+      "hashes": {
+        "sha1": "PLACEHOLDER_MODMENU_SHA1"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/mOgUt4GM/versions/YIfqIJ8q/modmenu-11.0.2.jar"
+      ],
+      "fileSize": 800000
+    },
+    {
+      "path": "mods/cloth-config-15.0.140-fabric.jar",
+      "hashes": {
+        "sha1": "PLACEHOLDER_CLOTH_SHA1"
+      },
+      "downloads": [
+        "https://cdn.modrinth.com/data/9s6osm5g/versions/6y7WI3ol/cloth-config-15.0.140-fabric.jar"
+      ],
+      "fileSize": 850000
+    }
+  ],
+  "dependencies": {
+    "minecraft": "1.21.1",
+    "fabric-loader": ">=0.16.0",
+    "java": ">=21"
+  }
+}

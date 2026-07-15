@@ -1,0 +1,68 @@
+name: Build Quackingly
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Set up Gradle 8.8
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.8'
+
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', 'gradle.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Generate Gradle wrapper (so loom can run)
+        run: gradle wrapper --gradle-version 8.8 --distribution-type bin
+
+      - name: Build with Gradle (fabric-loom)
+        run: ./gradlew build --no-daemon --stacktrace --info
+
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quackingly-mod-jar
+          path: build/libs/*.jar
+          if-no-files-found: warn
+
+      - name: Upload modpack manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quackingly-modpack
+          path: modpack/**
+          if-no-files-found: warn
+
+      - name: Print build artifacts
+        if: always()
+        run: |
+          echo "=========================================="
+          echo "Built .jar files (if any):"
+          ls -la build/libs/ 2>/dev/null || echo "  (no build/libs directory)"
+          echo "=========================================="
+          echo "Download artifacts from the Actions run page:"
+          echo "  ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
