@@ -13,18 +13,13 @@ base {
 repositories {
     mavenCentral()
     maven { url = 'https://maven.fabricmc.net/' }
-    // Modrinth maven — used as fallback for Carpet (maven.kosma.dev has a broken cert)
+    // Modrinth maven — used for Carpet (maven.kosma.dev has a broken cert) and the SVC compile-time symbols
     maven {
         name = 'Modrinth'
         url = 'https://api.modrinth.com/maven'
         content {
             includeGroup 'maven.modrinth'
         }
-    }
-    // Simple Voice Chat API — official Max Henkel maven
-    maven {
-        name = 'MaxHenkel'
-        url = 'https://maven.maxhenkel.de/repository/public'
     }
     // Mod Menu (TerraformersMC)
     maven {
@@ -35,6 +30,11 @@ repositories {
     maven {
         name = 'Shedaniel'
         url = 'https://maven.shedaniel.me/'
+    }
+    // Max Henkel maven — official Simple Voice Chat API jar
+    maven {
+        name = 'MaxHenkel'
+        url = 'https://maven.maxhenkel.de/repository/public'
     }
 }
 
@@ -47,13 +47,11 @@ dependencies {
     // Fabric API
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
-    // Carpet mod — pulled from Modrinth (slug: carpet)
-    modImplementation "maven.modrinth:carpet:${project.minecraft_version}-${project.carpet_version}"
+    // Carpet mod — required at runtime for the fake-player system
+    modImplementation "maven.modrinth:carpet:${project.carpet_version}"
 
-    // Simple Voice Chat API — compile-only against the API jar; users install the full SVC mod separately
+    // Simple Voice Chat — compile against the API only (users install SVC separately at runtime)
     modCompileOnly "de.maxhenkel.voicechat:voicechat-api:${project.simple_voice_chat_version}"
-    // The full voicechat impl is required at runtime only (users install it). We mark it as a
-    // "suggests" dependency in fabric.mod.json instead of bundling.
 
     // Mod Menu — config screen entrypoint
     modImplementation "com.terraformersmc:modmenu:${project.modmenu_version}"
