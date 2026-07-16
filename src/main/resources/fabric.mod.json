@@ -3,7 +3,7 @@
   "id": "quackingly",
   "version": "${version}",
   "name": "Quackingly",
-  "description": "A safe, non-horror Verity-style AI companion for Minecraft. Player-model bot (Carpet) with Groq/OpenAI/Anthropic/Gemini LLM, voice via Simple Voice Chat, Mojang skin loading, and Grok-style 'unhinged' chat mode.",
+  "description": "A safe, non-horror Verity-style AI companion for Minecraft. Player-model bot (Carpet) with Groq/OpenAI/Anthropic/Gemini LLM, optional voice via Simple Voice Chat, Mojang skin loading, and Grok-style 'unhinged' chat mode.",
   "authors": [
     "StXaviersOfficial"
   ],
@@ -33,12 +33,12 @@
     "fabricloader": ">=0.16.0",
     "minecraft": "~1.21.1",
     "java": ">=21",
-    "fabric-api": "*",
-    "carpet": "*",
-    "voicechat": "*"
+    "fabric-api": "*"
   },
   "suggests": {
-    "modmenu": "*"
+    "modmenu": "*",
+    "carpet": "*",
+    "voicechat": "*"
   },
   "custom": {
     "quackingly:voicechat_plugin": "com.quackcraft.quackingly.voice.QuackinglyVoiceChatPlugin"

@@ -12,11 +12,18 @@ import java.util.Map;
  * OpenAI TTS client.
  *
  * POST https://api.openai.com/v1/audio/speech
- *   JSON: { "model": "tts-1", "voice": "alloy", "input": "<text>" }
+ *   JSON: { "model": "tts-1", "voice": "alloy", "input": "<text>", "response_format": "mp3" }
  *   Response body: raw MP3 bytes
  *
- * Returns the MP3 bytes; the ClientVoiceController pipes them into MC's
- * SoundSystem for playback at the companion's position.
+ * Defaults: tts-1 (NOT tts-1-hd) — tts-1 is the fastest cloud TTS available,
+ * ~250ms end-to-end latency. That's competitive with Verity's voice output.
+ *
+ * For higher-quality audio, users can switch to "tts-1-hd" in the config screen
+ * (slower but better).
+ *
+ * Voices: alloy (neutral), echo (male), fable (British), onyx (deep male),
+ *         nova (female), shimmer (soft female).
+ * "alloy" is the closest match to Verity's default voice character.
  */
 public class OpenAITTS {
 
@@ -26,11 +33,15 @@ public class OpenAITTS {
         if (key == null || key.isBlank()) {
             throw new IllegalStateException("OpenAI TTS key required (set in Mod Menu -> Voice)");
         }
+
+        // Truncate to ~500 chars to keep TTS latency low and avoid runaway costs
+        String truncated = text.length() > 500 ? text.substring(0, 497) + "..." : text;
+
         String body = String.format(
-                "{\"model\":\"%s\",\"voice\":\"%s\",\"input\":%s}",
+                "{\"model\":\"%s\",\"voice\":\"%s\",\"input\":%s,\"response_format\":\"mp3\"}",
                 cfg.ttsModel,
                 cfg.ttsVoice,
-                quoteJson(text));
+                quoteJson(truncated));
 
         HttpResponse<byte[]> resp = HttpUtils.postBytesWithHeaders(
                 "https://api.openai.com/v1/audio/speech",

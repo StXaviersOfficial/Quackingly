@@ -1,28 +1,27 @@
 package com.quackcraft.quackingly.skin;
 
-import carpet.patches.EntityPlayerMPFake;
 import com.mojang.authlib.GameProfile;
 import com.mojang.authlib.properties.Property;
 import com.quackcraft.quackingly.Quackingly;
 import com.quackcraft.quackingly.config.QuackinglyConfig;
 import net.minecraft.entity.player.PlayerEntity;
 
-import java.util.UUID;
-
-import com.quackcraft.quackingly.skin.SkinLoader.FetchedSkin;
-
 /**
- * Applies a Mojang-fetched skin to a Carpet fake player.
+ * Applies a Mojang-fetched skin to a (fake) player.
  *
  * Strategy: GameProfile properties carry a "textures" Property whose value is the
- * base64 blob from Mojang's session API. Carpet's EntityPlayerMPFake builds its
- * GameProfile from the username only — so we replace the textures property in-place.
+ * base64 blob from Mojang's session API. We replace the textures property in-place.
  *
  * Client-side, Minecraft's PlayerSkinProvider will then fetch the actual PNG from
  * textures.minecraft.net and render it on the fake player.
  *
  * For /quack skin set <username>: we fetch from Mojang live, then apply.
  * For the default "Quack" skin: we fetch once on spawn, cache, and reuse.
+ *
+ * NOTE: We intentionally use PlayerEntity (the vanilla base class) here, not
+ * Carpet's EntityPlayerMPFake. This way SkinApplier doesn't depend on Carpet
+ * being present at runtime. If Carpet is missing, the apply is just a no-op
+ * (no fake player exists to apply to anyway).
  */
 public final class SkinApplier {
 
@@ -48,18 +47,22 @@ public final class SkinApplier {
         }
     }
 
-    /** Apply an already-fetched skin's GameProfile properties to the fake player. */
+    /** Apply an already-fetched skin's GameProfile properties to the (fake) player. */
     public static void applyFetched(PlayerEntity entity, FetchedSkin skin) {
-        if (!(entity instanceof EntityPlayerMPFake fake)) return;
+        if (entity == null || skin == null) return;
         try {
-            GameProfile profile = fake.getGameProfile();
+            GameProfile profile = entity.getGameProfile();
+            if (profile == null) {
+                Quackingly.LOGGER.warn("Cannot apply skin — player has no GameProfile.");
+                return;
+            }
             // Replace any existing textures property
             profile.getProperties().removeAll("textures");
             profile.getProperties().put("textures", new Property(
                     "textures", skin.textureBase64, skin.signatureBase64));
-            Quackingly.LOGGER.info("[Quackingly] Applied skin '{}' to fake player.", skin.username);
+            Quackingly.LOGGER.info("[Quackingly] Applied skin '{}' to player.", skin.username);
         } catch (Throwable t) {
-            Quackingly.LOGGER.error("Failed to apply skin to fake player", t);
+            Quackingly.LOGGER.error("Failed to apply skin to player", t);
         }
     }
 

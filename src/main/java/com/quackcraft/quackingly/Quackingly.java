@@ -1,6 +1,7 @@
 package com.quackcraft.quackingly;
 
 import com.quackcraft.quackingly.command.QuackSkinCommand;
+import com.quackcraft.quackingly.companion.CompanionBrain;
 import com.quackcraft.quackingly.companion.CompanionManager;
 import com.quackcraft.quackingly.config.QuackinglyConfig;
 import com.quackcraft.quackingly.network.ServerCompanionPackets;
@@ -39,5 +40,6 @@ public class Quackingly implements ModInitializer {
                 QuackSkinCommand.register(dispatcher));
 
         ServerCompanionPackets.register();
+        CompanionBrain.registerTickHook();
     }
 }

@@ -11,6 +11,8 @@ import javax.sound.sampled.*;
 import java.io.ByteArrayInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * Client-side voice pipeline controller. Coordinates:
@@ -19,20 +21,26 @@ import java.nio.file.Path;
  *   Push-to-talk key up    -> QuackinglyVoiceChatPlugin.stopAndTranscribe()
  *                              -> GroqSTT.transcribe(wav)
  *                              -> send text to server as ChatToCompanion packet
- *                              -> server calls LLM, sends reply back
- *                              -> on reply received, OpenAITTS.synthesise(text)
- *                              -> play MP3 at companion position
+ *                              -> server calls LLM, sends CompanionReply packet
+ *                              -> onCompanionReply(text) (below)
+ *                              -> OpenAITTS.synthesise(text) on worker thread
+ *                              -> play MP3 via Java Sound
  *
- * The MP3 playback path is a bit involved on Minecraft's SoundSystem. For a
- * robust first cut, we write the MP3 to a temp file and play it via the
- * SoundManager's streaming source. Refinements (in-memory StreamingAudioSink)
- * can come later.
+ * Voice output:
+ *   - When server sends a CompanionReplyPayload, we synthesise TTS audio via
+ *     OpenAI tts-1 (fastest cloud TTS, ~250ms latency) and play it back.
+ *   - TTS calls are made on a worker thread so we don't stall the render thread.
+ *   - If voice is disabled in config, we skip TTS and just show the chat line.
+ *   - If TTS key is missing or call fails, we fall back to chat-only silently.
  */
 public final class ClientVoiceController {
 
     private ClientVoiceController() {}
 
     private static boolean pttActive = false;
+    /** Cache of recent TTS audio to avoid re-synthesising identical replies. */
+    private static final ConcurrentMap<String, byte[]> ttsCache = new ConcurrentHashMap<>();
+    private static final int TTS_CACHE_MAX = 32;
 
     public static void togglePushToTalk() {
         if (!QuackinglyConfig.get().voiceEnabled) {
@@ -83,11 +91,49 @@ public final class ClientVoiceController {
     }
 
     /**
-     * Play back an MP3 byte[] at the companion's position.
+     * Called when the server sends us Quackingly's reply text. If voice is
+     * enabled and a TTS API key is configured, we synthesise MP3 audio and
+     * play it back. Otherwise, we just leave the chat line visible (already
+     * shown by the server-side sendMessage call).
+     */
+    public static void onCompanionReply(String replyText) {
+        if (replyText == null || replyText.isBlank()) return;
+        QuackinglyConfig.ConfigData cfg = QuackinglyConfig.get();
+        if (!cfg.voiceEnabled) return;
+        if (cfg.ttsApiKey == null || cfg.ttsApiKey.isBlank()) {
+            Quackingly.LOGGER.debug("[Quackingly] Voice enabled but no TTS key set; skipping TTS for reply.");
+            return;
+        }
+
+        // Run TTS on a worker thread so we don't stall the client tick
+        new Thread(() -> {
+            try {
+                byte[] mp3 = ttsCache.computeIfAbsent(replyText, t -> {
+                    try { return OpenAITTS.synthesise(t); }
+                    catch (Exception e) {
+                        Quackingly.LOGGER.warn("TTS synthesis failed", e);
+                        return new byte[0];   // cache the failure so we don't retry
+                    }
+                });
+                if (mp3 != null && mp3.length > 0) {
+                    playMp3AtCompanion(mp3);
+                }
+                // Trim cache if it grew too big
+                if (ttsCache.size() > TTS_CACHE_MAX) {
+                    ttsCache.clear();
+                }
+            } catch (Throwable t) {
+                Quackingly.LOGGER.warn("TTS playback pipeline failed", t);
+            }
+        }, "Quackingly-TTS").start();
+    }
+
+    /**
+     * Play back an MP3 byte[] via Java Sound API. We use SourceDataLine directly
+     * (works on Pojav/Mojo too — no MC SoundSystem dependency).
      *
-     * For now: write to temp file + use Java Sound API directly. This bypasses
-     * MC's SoundManager but is robust across MC versions. We spatialise manually
-     * by adjusting volume based on distance to companion.
+     * Positional audio: future versions can spatialise based on distance to
+     * the companion; for v1.1 we just play at fixed volume.
      */
     public static void playMp3AtCompanion(byte[] mp3Bytes) {
         MinecraftClient.getInstance().execute(() -> {
@@ -96,7 +142,6 @@ public final class ClientVoiceController {
                 tmp = Files.createTempFile("quackingly_tts_", ".mp3");
                 Files.write(tmp, mp3Bytes);
 
-                // Use Java Sound for playback (works on Pojav/Mojo too)
                 AudioInputStream in = AudioSystem.getAudioInputStream(tmp.toFile());
                 AudioFormat baseFormat = in.getFormat();
                 AudioFormat decodedFormat = new AudioFormat(
@@ -109,14 +154,12 @@ public final class ClientVoiceController {
                         false);
                 AudioInputStream din = AudioSystem.getAudioInputStream(decodedFormat, in);
 
-                // Simple volume reduction (mimics positional audio fade)
-                FloatControl gain = null;
                 SourceDataLine line = AudioSystem.getSourceDataLine(decodedFormat);
                 line.open(decodedFormat);
                 line.start();
                 if (line.isControlSupported(FloatControl.Type.MASTER_GAIN)) {
-                    gain = (FloatControl) line.getControl(FloatControl.Type.MASTER_GAIN);
-                    gain.setValue(-6.0f); // modest attenuation
+                    FloatControl gain = (FloatControl) line.getControl(FloatControl.Type.MASTER_GAIN);
+                    gain.setValue(-3.0f);   // modest attenuation
                 }
 
                 byte[] buf = new byte[4096];

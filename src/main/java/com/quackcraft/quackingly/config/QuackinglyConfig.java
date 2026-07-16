@@ -9,7 +9,6 @@ import net.fabricmc.loader.api.FabricLoader;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Properties;
 
 /**
  * Persistent config for Quackingly. Stored as JSON in config/quackingly.json
@@ -63,13 +62,16 @@ public class QuackinglyConfig {
         public String customBaseUrl = "";
         public String model = "llama-3.3-70b-versatile";
 
-        // TTS (OpenAI)
+        // TTS (OpenAI) — for Quackingly's voice output
         public String ttsApiKey = "";
 
         // Behaviour
         public String defaultMode = "normal";  // "normal" | "unhinged"
-        public boolean voiceEnabled = true;
+        public boolean voiceEnabled = true;    // master toggle for voice output
+        public boolean voiceInputEnabled = false; // voice input (PTT) — needs SVC + Groq STT
         public boolean autoSummon = false;
+        public boolean followPlayer = true;    // companion AI: follow host
+        public boolean lookAtPlayer = true;    // companion AI: face host when close
 
         // Skin
         public String defaultSkinUser = "Quack";
@@ -77,11 +79,10 @@ public class QuackinglyConfig {
         // Token optimisation
         public int maxMemoryTurns = 10;       // hard cap on conversation history
         public int maxSummaryTokens = 400;    // compressed summary of older turns
-        public boolean enableRagLite = true;  // cache recent facts to avoid re-asking
 
-        // Voice
+        // Voice output (OpenAI TTS)
         public String sttModel = "whisper-large-v3";
         public String ttsVoice = "alloy";     // OpenAI voices: alloy, echo, fable, onyx, nova, shimmer
-        public String ttsModel = "tts-1";
+        public String ttsModel = "tts-1";     // tts-1 (fast, ~250ms) or tts-1-hd (slower, higher quality)
     }
 }

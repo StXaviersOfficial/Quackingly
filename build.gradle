@@ -42,17 +42,18 @@ dependencies {
     // Fabric API
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
-    // Carpet mod — required at runtime for the fake-player system
-    modImplementation "maven.modrinth:carpet:${project.carpet_version}"
+    // Carpet mod — compile against only (NOT required at runtime).
+    // We use reflection to call EntityPlayerMPFake.createFake, so Carpet is an
+    // optional runtime dependency. Users get a friendly error message if missing.
+    modCompileOnly "maven.modrinth:carpet:${project.carpet_version}"
 
-    // Simple Voice Chat — compile against the API only (users install SVC separately at runtime)
+    // Simple Voice Chat — compile against the API only (optional at runtime)
     modCompileOnly "de.maxhenkel.voicechat:voicechat-api:${project.simple_voice_chat_version}"
 
-    // Mod Menu — pulled from Modrinth (terraformers maven is flaky).
-    // Same content, just a more reliable download source.
-    modImplementation "maven.modrinth:modmenu:${project.modmenu_version}"
+    // Mod Menu — compile-only. If absent at runtime, the modmenu entrypoint just isn't called.
+    modCompileOnly "maven.modrinth:modmenu:${project.modmenu_version}"
 
-    // Cloth Config — config file backend
+    // Cloth Config — config file backend (bundled inside our jar via `include`)
     modImplementation "me.shedaniel.cloth:cloth-config-fabric:${project.cloth_config_version}"
     include "me.shedaniel.cloth:cloth-config-fabric:${project.cloth_config_version}"
 }

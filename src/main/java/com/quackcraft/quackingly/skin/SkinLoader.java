@@ -6,9 +6,6 @@ import com.google.gson.JsonParser;
 import com.quackcraft.quackingly.Quackingly;
 import com.quackcraft.quackingly.config.QuackinglyConfig;
 import com.quackcraft.quackingly.util.HttpUtils;
-import net.minecraft.client.texture.PlayerSkinProvider;
-import net.minecraft.client.texture.PlayerSkinTexture;
-import org.apache.commons.lang3.Validate;
 
 import java.net.http.HttpResponse;
 import java.util.Base64;
@@ -94,7 +91,9 @@ public final class SkinLoader {
     }
 
     public static UUID parseUuidNoDashes(String id) {
-        Validate.isTrue(id.length() == 32, "Expected 32-char UUID, got %s", id.length());
+        if (id == null || id.length() != 32) {
+            throw new IllegalArgumentException("Expected 32-char UUID, got length " + (id == null ? "null" : id.length()));
+        }
         String dashed = id.substring(0, 8) + "-" + id.substring(8, 12) + "-" + id.substring(12, 16)
                 + "-" + id.substring(16, 20) + "-" + id.substring(20);
         return UUID.fromString(dashed);

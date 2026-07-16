@@ -1,21 +1,18 @@
 package com.quackcraft.quackingly.companion;
 
-import carpet.CarpetSettings;
-import carpet.patches.EntityPlayerMPFake;
 import com.quackcraft.quackingly.Quackingly;
 import com.quackcraft.quackingly.config.QuackinglyConfig;
-import com.quackcraft.quackingly.llm.ChatMessage;
 import com.quackcraft.quackingly.llm.ConversationMemory;
 import com.quackcraft.quackingly.llm.LLMProvider;
 import com.quackcraft.quackingly.llm.PromptManager;
+import com.quackcraft.quackingly.network.ServerCompanionPackets;
 import com.quackcraft.quackingly.skin.SkinApplier;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.GameMode;
 
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -23,8 +20,11 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Per-server manager for the Quackingly companion.
  *
- * Uses Carpet's EntityPlayerMPFake to spawn a real fake-player that looks/acts
- * like a normal player. One Quackingly per world (per online player host).
+ * Uses Carpet's EntityPlayerMPFake (when Carpet is installed) to spawn a real
+ * fake-player that looks/acts like a normal player. One Quackingly per world
+ * (per online player host).
+ *
+ * Carpet is optional — if absent, summon fails gracefully with a friendly message.
  *
  * Token optimisation:
  *   - We only call the LLM when there's a new user message (event-driven, not tick-polling).
@@ -33,17 +33,18 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class CompanionManager {
     private static final CompanionManager INSTANCE = new CompanionManager();
+    private static final boolean CARPET_PRESENT =
+            FabricLoader.getInstance().isModLoaded("carpet");
 
     private MinecraftServer server;
     private final ConcurrentHashMap<UUID, CompanionSession> sessions = new ConcurrentHashMap<>();
 
     public static CompanionManager getInstance() { return INSTANCE; }
+    public static boolean isCarpetPresent() { return CARPET_PRESENT; }
 
     public void onServerStarted(MinecraftServer server) {
         this.server = server;
-        // Carpet must allow fake players
-        CarpetSettings.allowSpawningOfflinePlayers = true;
-        Quackingly.LOGGER.info("[Quackingly] Server started, fake-player support enabled.");
+        Quackingly.LOGGER.info("[Quackingly] Server started. Carpet present: {}", CARPET_PRESENT);
     }
 
     public void onServerStopped() {
@@ -62,21 +63,25 @@ public class CompanionManager {
             sessions.remove(host.getUuid());
             host.sendMessage(Text.translatable("chat.quackingly.despawned").formatted(Formatting.YELLOW));
             return false;
-        } else {
-            CompanionSession ns = new CompanionSession(host);
-            sessions.put(host.getUuid(), ns);
-            boolean ok = ns.spawn();
-            if (ok) host.sendMessage(Text.translatable("chat.quackingly.summoned").formatted(Formatting.AQUA));
-            else host.sendMessage(Text.literal("Quackingly could not spawn (is Carpet installed?)").formatted(Formatting.RED));
-            return ok;
         }
+        if (!CARPET_PRESENT) {
+            host.sendMessage(Text.literal("Quackingly needs the Carpet mod to spawn. " +
+                    "Install Carpet (1.21.1) from Modrinth and try again.").formatted(Formatting.RED));
+            return false;
+        }
+        CompanionSession ns = new CompanionSession(host);
+        sessions.put(host.getUuid(), ns);
+        boolean ok = ns.spawn();
+        if (ok) host.sendMessage(Text.translatable("chat.quackingly.summoned").formatted(Formatting.AQUA));
+        else host.sendMessage(Text.literal("Quackingly could not spawn. Check the log.").formatted(Formatting.RED));
+        return ok;
     }
 
     /** Send a chat message TO Quackingly on behalf of a player. */
     public void sendToCompanion(ServerPlayerEntity host, String message) {
         CompanionSession s = sessions.get(host.getUuid());
         if (s == null || !s.isAlive()) {
-            host.sendMessage(Text.translatable("chat.quackingly.no_api_key").formatted(Formatting.RED));
+            host.sendMessage(Text.literal("Summon Quackingly first (press K).").formatted(Formatting.RED));
             return;
         }
         s.handleUserMessage(host, message);
@@ -86,11 +91,16 @@ public class CompanionManager {
         return sessions.get(host.getUuid());
     }
 
+    /** Read-only view of all active sessions (used by CompanionBrain for tick). */
+    public java.util.Collection<CompanionSession> sessionsView() {
+        return sessions.values();
+    }
+
     /* ---- Per-player session ---- */
 
     public class CompanionSession {
         private final ServerPlayerEntity host;
-        private EntityPlayerMPFake fakePlayer;
+        private PlayerEntity fakePlayer;       // EntityPlayerMPFake at runtime (when Carpet is present)
         private final ConversationMemory memory = new ConversationMemory();
         private LLMProvider llm;
         private String mode;
@@ -100,26 +110,16 @@ public class CompanionManager {
             this.mode = QuackinglyConfig.get().defaultMode;
         }
 
+        public ServerPlayerEntity getHost() { return host; }
+
         public boolean spawn() {
             if (server == null) return false;
             try {
-                Vec3d pos = new Vec3d(host.getX() + 1, host.getY(), host.getZ() + 1);
-                // Carpet's createFake returns void in 1.4.147 (8-arg overload); the player is
-                // added to the server during the call. We then look it up by name.
-                EntityPlayerMPFake.createFake(
-                        "Quackingly",
-                        server,
-                        pos,
-                        host.getYaw(), 0f,
-                        host.getWorld().getRegistryKey(),
-                        GameMode.SURVIVAL,
-                        false);
-                // Look up the freshly-spawned fake player by name
-                fakePlayer = (EntityPlayerMPFake) server.getPlayerManager().getPlayer("Quackingly");
-                if (fakePlayer == null) {
-                    Quackingly.LOGGER.warn("Quackingly spawn call returned but player lookup failed.");
-                    return false;
-                }
+                // Call CarpetSpawnHelper, which holds the Carpet-dependent code.
+                // This class is only loaded if CARPET_PRESENT is true (checked above).
+                Object obj = CarpetSpawnHelper.spawnFakePlayer(server, host);
+                if (!(obj instanceof PlayerEntity)) return false;
+                fakePlayer = (PlayerEntity) obj;
                 SkinApplier.applyDefaultSkin(fakePlayer);
                 return true;
             } catch (Throwable t) {
@@ -137,7 +137,7 @@ public class CompanionManager {
 
         public boolean isAlive() { return fakePlayer != null && !fakePlayer.isRemoved(); }
 
-        public EntityPlayerMPFake getFakePlayer() { return fakePlayer; }
+        public PlayerEntity getFakePlayer() { return fakePlayer; }
 
         public void setMode(String m) { this.mode = m; }
         public String getMode() { return mode; }
@@ -146,33 +146,51 @@ public class CompanionManager {
             memory.addUser("[" + from.getName().getString() + "] " + text);
             host.sendMessage(Text.literal("Quackingly is thinking...").formatted(Formatting.ITALIC, Formatting.GRAY));
 
-            // Run LLM call off-thread to not block server tick
-            server.execute(() -> {
+            // Run LLM call on a worker thread so we don't block server tick
+            new Thread(() -> {
                 try {
                     if (llm == null) llm = LLMProvider.fromConfig();
                     if (!llm.isReady()) {
-                        fakePlayer.sendMessage(Text.literal("(no API key set)").formatted(Formatting.RED));
+                        server.execute(() -> fakePlayer.sendMessage(
+                                Text.literal("(no API key set — open Mod Menu → Quackingly)").formatted(Formatting.RED)));
                         return;
                     }
                     String ctx = describeWorld(from);
                     String prompt = PromptManager.systemPrompt(mode, from.getName().getString(), ctx);
                     String reply = llm.chat(memory.buildForCall(prompt));
                     memory.addAssistant(reply);
-                    fakePlayer.sendMessage(Text.literal("<Quackingly> " + reply).formatted(Formatting.WHITE));
+
+                    // Show the reply in chat
+                    server.execute(() -> fakePlayer.sendMessage(
+                            Text.literal("<Quackingly> " + reply).formatted(Formatting.WHITE)));
+
+                    // Send TTS audio back to the host client (so they hear Quackingly speak)
+                    ServerCompanionPackets.sendTtsReply(from, reply);
                 } catch (Exception e) {
                     Quackingly.LOGGER.error("LLM call failed", e);
-                    fakePlayer.sendMessage(Text.literal("(error: " + e.getMessage() + ")").formatted(Formatting.RED));
+                    server.execute(() -> fakePlayer.sendMessage(
+                            Text.literal("(error: " + e.getMessage() + ")").formatted(Formatting.RED)));
                 }
-            });
+            }, "Quackingly-LLM").start();
         }
 
         private String describeWorld(ServerPlayerEntity p) {
             try {
-                return String.format("Near %s at (%.0f, %.0f, %.0f), %s, time %d",
-                        p.getWorld().getRegistryKey().getValue(),
+                // Richer world context — helps the LLM respond like a real player would
+                StringBuilder sb = new StringBuilder();
+                sb.append(String.format("Player %s at (%.0f, %.0f, %.0f) in %s, %s, time %d ticks",
+                        p.getName().getString(),
                         p.getX(), p.getY(), p.getZ(),
+                        p.getWorld().getRegistryKey().getValue(),
                         p.getWorld().isNight() ? "night" : "day",
-                        p.getWorld().getTimeOfDay() % 24000);
+                        p.getWorld().getTimeOfDay() % 24000));
+                sb.append(String.format("; health %.0f/%.0f, hunger %d/20, air %d",
+                        p.getHealth(), p.getMaxHealth(), p.getHungerManager().getFoodLevel(), p.getAir()));
+                if (p.isOnFire()) sb.append("; on fire");
+                if (p.isInWater()) sb.append("; in water");
+                if (p.isSneaking()) sb.append("; sneaking");
+                if (p.isSprinting()) sb.append("; sprinting");
+                return sb.toString();
             } catch (Throwable t) {
                 return "in Minecraft";
             }

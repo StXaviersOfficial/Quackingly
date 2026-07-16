@@ -41,6 +41,23 @@ public class ClientCompanionPackets {
         public String text() { return text; }
     }
 
+    /**
+     * Server -> Client: Quackingly just said this. The client should:
+     *   1. Optionally synthesise TTS audio via OpenAI (if voice enabled + TTS key set)
+     *   2. Play the audio at the companion's position
+     */
+    public record CompanionReplyPayload(String text) implements CustomPayload {
+        public static final CustomPayload.Id<CompanionReplyPayload> ID =
+                new CustomPayload.Id<>(Identifier.of(Quackingly.MOD_ID, "companion_reply"));
+        public static final PacketCodec<RegistryByteBuf, CompanionReplyPayload> CODEC =
+                PacketCodec.tuple(
+                        PacketCodecs.STRING,
+                        CompanionReplyPayload::text,
+                        CompanionReplyPayload::new);
+        @Override public CustomPayload.Id<? extends CustomPayload> getId() { return ID; }
+        public String text() { return text; }
+    }
+
     public static void sendToggleSummon() {
         try {
             ClientPlayNetworking.send(new ToggleSummonPayload());
