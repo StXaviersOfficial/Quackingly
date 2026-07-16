@@ -23,7 +23,7 @@ import java.util.concurrent.ConcurrentMap;
  *                              -> send text to server as ChatToCompanion packet
  *                              -> server calls LLM, sends CompanionReply packet
  *                              -> onCompanionReply(text) (below)
- *                              -> OpenAITTS.synthesise(text) on worker thread
+ *                              -> TTSProvider.fromConfig().synthesise(text) on worker thread
  *                              -> play MP3 via Java Sound
  *
  * Voice output:
@@ -43,9 +43,10 @@ public final class ClientVoiceController {
     private static final int TTS_CACHE_MAX = 32;
 
     public static void togglePushToTalk() {
-        if (!QuackinglyConfig.get().voiceEnabled) {
+        if (!QuackinglyConfig.get().voiceInputEnabled) {
             MinecraftClient.getInstance().player.sendMessage(
-                    Text.translatable("chat.quackingly.voice_disabled").formatted(Formatting.RED));
+                    Text.literal("Voice input is disabled. Enable it in Mod Menu → Quackingly → Voice.")
+                            .formatted(Formatting.RED));
             return;
         }
         if (pttActive) releasePtt();
@@ -91,17 +92,19 @@ public final class ClientVoiceController {
     }
 
     /**
-     * Called when the server sends us Quackingly's reply text. If voice is
-     * enabled and a TTS API key is configured, we synthesise MP3 audio and
-     * play it back. Otherwise, we just leave the chat line visible (already
-     * shown by the server-side sendMessage call).
+     * Called when the server sends us Quackingly's reply text. The server only
+     * sends this packet when responseMode includes voice output.
+     *
+     * We synthesise TTS audio via the configured provider (Fish Audio by default,
+     * OpenAI as fallback) and play it back. The 32-entry TTS cache is preserved.
      */
     public static void onCompanionReply(String replyText) {
         if (replyText == null || replyText.isBlank()) return;
-        QuackinglyConfig.ConfigData cfg = QuackinglyConfig.get();
-        if (!cfg.voiceEnabled) return;
-        if (cfg.ttsApiKey == null || cfg.ttsApiKey.isBlank()) {
-            Quackingly.LOGGER.debug("[Quackingly] Voice enabled but no TTS key set; skipping TTS for reply.");
+
+        TTSProvider provider = TTSProvider.fromConfig();
+        if (!provider.isReady()) {
+            Quackingly.LOGGER.debug("[Quackingly] TTS provider '{}' not ready (no API key set); skipping voice.",
+                    provider.getProviderName());
             return;
         }
 
@@ -109,9 +112,11 @@ public final class ClientVoiceController {
         new Thread(() -> {
             try {
                 byte[] mp3 = ttsCache.computeIfAbsent(replyText, t -> {
-                    try { return OpenAITTS.synthesise(t); }
-                    catch (Exception e) {
-                        Quackingly.LOGGER.warn("TTS synthesis failed", e);
+                    try {
+                        return provider.synthesise(t);
+                    } catch (Exception e) {
+                        Quackingly.LOGGER.warn("TTS synthesis failed (provider={}): {}",
+                                provider.getProviderName(), e.getMessage());
                         return new byte[0];   // cache the failure so we don't retry
                     }
                 });

@@ -3,6 +3,7 @@ package com.quackcraft.quackingly.companion;
 import com.quackcraft.quackingly.Quackingly;
 import com.quackcraft.quackingly.config.QuackinglyConfig;
 import com.quackcraft.quackingly.llm.ConversationMemory;
+import com.quackcraft.quackingly.llm.KeyRotation;
 import com.quackcraft.quackingly.llm.LLMProvider;
 import com.quackcraft.quackingly.llm.PromptManager;
 import com.quackcraft.quackingly.network.ServerCompanionPackets;
@@ -102,12 +103,19 @@ public class CompanionManager {
         private final ServerPlayerEntity host;
         private PlayerEntity fakePlayer;       // EntityPlayerMPFake at runtime (when Carpet is present)
         private final ConversationMemory memory = new ConversationMemory();
-        private LLMProvider llm;
+        private KeyRotation llmKeyRotation;     // rebuilt when config changes
         private String mode;
 
         public CompanionSession(ServerPlayerEntity host) {
             this.host = host;
             this.mode = QuackinglyConfig.get().defaultMode;
+            rebuildKeyRotation();
+        }
+
+        /** Rebuild the key rotation from current config. Call when config changes. */
+        public void rebuildKeyRotation() {
+            QuackinglyConfig.ConfigData cfg = QuackinglyConfig.get();
+            llmKeyRotation = new KeyRotation(cfg.apiKey, cfg.backupApiKeys);
         }
 
         public ServerPlayerEntity getHost() { return host; }
@@ -144,28 +152,71 @@ public class CompanionManager {
 
         public void handleUserMessage(ServerPlayerEntity from, String text) {
             memory.addUser("[" + from.getName().getString() + "] " + text);
+
+            // Refresh key rotation in case the user changed config since last call
+            rebuildKeyRotation();
+
+            // Show "thinking" indicator (pre-reply, like a typing indicator — NOT a "speaking" indicator)
             host.sendMessage(Text.literal("Quackingly is thinking...").formatted(Formatting.ITALIC, Formatting.GRAY));
 
             // Run LLM call on a worker thread so we don't block server tick
             new Thread(() -> {
                 try {
-                    if (llm == null) llm = LLMProvider.fromConfig();
-                    if (!llm.isReady()) {
+                    String currentKey = llmKeyRotation.current();
+                    if (currentKey.isBlank()) {
                         server.execute(() -> fakePlayer.sendMessage(
                                 Text.literal("(no API key set — open Mod Menu → Quackingly)").formatted(Formatting.RED)));
                         return;
                     }
-                    String ctx = describeWorld(from);
-                    String prompt = PromptManager.systemPrompt(mode, from.getName().getString(), ctx);
-                    String reply = llm.chat(memory.buildForCall(prompt));
+
+                    String reply = null;
+                    Exception lastError = null;
+
+                    // Try primary key, then backups on 401/402/429 errors
+                    while (reply == null && currentKey != null && !currentKey.isBlank()) {
+                        try {
+                            LLMProvider llm = LLMProvider.fromConfig(currentKey);
+                            String ctx = describeWorld(from);
+                            String prompt = PromptManager.systemPrompt(mode, from.getName().getString(), ctx);
+                            reply = llm.chat(memory.buildForCall(prompt));
+                        } catch (LLMProvider.LLMHttpException e) {
+                            if (LLMProvider.isKeyOrQuotaError(e.httpStatus) && llmKeyRotation.hasMore()) {
+                                Quackingly.LOGGER.warn("[Quackingly] LLM key failed (HTTP {}), trying backup.",
+                                        e.httpStatus);
+                                currentKey = llmKeyRotation.advance();
+                                continue;
+                            }
+                            lastError = e;
+                            break;
+                        }
+                    }
+
+                    if (reply == null) {
+                        final Exception err = lastError;
+                        String msg = err != null ? err.getMessage() : "No LLM keys available.";
+                        server.execute(() -> fakePlayer.sendMessage(
+                                Text.literal("(error: " + msg + ")").formatted(Formatting.RED)));
+                        return;
+                    }
+
+                    // Memory persists across key swaps — Quackingly never forgets the conversation
                     memory.addAssistant(reply);
 
-                    // Show the reply in chat
-                    server.execute(() -> fakePlayer.sendMessage(
-                            Text.literal("<Quackingly> " + reply).formatted(Formatting.WHITE)));
+                    // Determine what to show based on responseMode
+                    String responseMode = QuackinglyConfig.get().responseMode;
+                    if (responseMode == null || responseMode.isBlank()) responseMode = "both";
 
-                    // Send TTS audio back to the host client (so they hear Quackingly speak)
-                    ServerCompanionPackets.sendTtsReply(from, reply);
+                    // Chat line (visible to host + as a chat bubble above Quackingly)
+                    if (responseMode.equals("chat_only") || responseMode.equals("both")) {
+                        final String replyText = reply;
+                        server.execute(() -> fakePlayer.sendMessage(
+                                Text.literal("<Quackingly> " + replyText).formatted(Formatting.WHITE)));
+                    }
+
+                    // Voice output (client synthesises TTS from the reply text)
+                    if (responseMode.equals("voice_only") || responseMode.equals("both")) {
+                        ServerCompanionPackets.sendTtsReply(from, reply);
+                    }
                 } catch (Exception e) {
                     Quackingly.LOGGER.error("LLM call failed", e);
                     server.execute(() -> fakePlayer.sendMessage(

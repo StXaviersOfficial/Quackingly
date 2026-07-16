@@ -56,33 +56,44 @@ public class QuackinglyConfig {
     }
 
     public static class ConfigData {
-        // LLM
+        // LLM (Groq by default; supports OpenAI/OpenRouter/Anthropic/Gemini/Cerebras/custom)
         public String apiKey = "";
         public String detectedProvider = "groq";
-        public String customBaseUrl = "";
+        public String customBaseUrl = "";        // for Cerebras: https://inference.cerebras.ai/v1
         public String model = "llama-3.3-70b-versatile";
+        public String backupApiKeys = "";         // comma-separated backup LLM keys
 
-        // TTS (OpenAI) — for Quackingly's voice output
-        public String ttsApiKey = "";
+        // TTS provider selection
+        public String ttsProvider = "fish_audio"; // "fish_audio" (default, free) | "openai"
+
+        // Fish Audio TTS (default voice output — free tier, "verity" voice available)
+        public String fishAudioApiKey = "";
+        public String fishVoiceReferenceId = "063421453a724a6a8063255c867e9589";
+        public String fishBackupVoiceReferenceId = "99906ab84a8d4e16897b357cf633a46b";
+
+        // OpenAI TTS (fallback — paid, but fast)
+        public String openaiTtsApiKey = "";
+        public String openaiTtsVoice = "alloy";  // alloy, echo, fable, onyx, nova, shimmer
+        public String openaiTtsModel = "tts-1";  // tts-1 (fast) or tts-1-hd (quality)
+
+        // Response mode: what the user sees when Quackingly replies
+        public String responseMode = "both";     // "chat_only" | "voice_only" | "both"
 
         // Behaviour
-        public String defaultMode = "normal";  // "normal" | "unhinged"
-        public boolean voiceEnabled = true;    // master toggle for voice output
+        public String defaultMode = "normal";    // "normal" | "unhinged"
         public boolean voiceInputEnabled = false; // voice input (PTT) — needs SVC + Groq STT
         public boolean autoSummon = false;
-        public boolean followPlayer = true;    // companion AI: follow host
-        public boolean lookAtPlayer = true;    // companion AI: face host when close
+        public boolean followPlayer = true;      // companion AI: follow host
+        public boolean lookAtPlayer = true;      // companion AI: face host when close
 
         // Skin
         public String defaultSkinUser = "Quack";
 
         // Token optimisation
-        public int maxMemoryTurns = 10;       // hard cap on conversation history
-        public int maxSummaryTokens = 400;    // compressed summary of older turns
+        public int maxMemoryTurns = 10;         // hard cap on conversation history
+        public int maxSummaryTokens = 400;      // compressed summary of older turns
 
-        // Voice output (OpenAI TTS)
+        // Voice input (Groq Whisper STT — for future voice input feature)
         public String sttModel = "whisper-large-v3";
-        public String ttsVoice = "alloy";     // OpenAI voices: alloy, echo, fable, onyx, nova, shimmer
-        public String ttsModel = "tts-1";     // tts-1 (fast, ~250ms) or tts-1-hd (slower, higher quality)
     }
 }

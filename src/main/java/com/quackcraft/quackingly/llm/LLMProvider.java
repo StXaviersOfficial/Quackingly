@@ -21,22 +21,47 @@ public interface LLMProvider {
 
     /* ---- Factory ---- */
 
+    /**
+     * Create a provider from the current config (uses the primary API key).
+     * For backup-key failover, use {@link #fromConfig(String)} instead.
+     */
     static LLMProvider fromConfig() {
         QuackinglyConfig.ConfigData cfg = QuackinglyConfig.get();
-        String provider = ProviderDetector.detect(cfg.apiKey);
+        return fromConfig(cfg.apiKey);
+    }
+
+    /**
+     * Create a provider using a specific API key (used by KeyRotation for
+     * backup-key failover). The key's prefix determines which provider impl
+     * is returned.
+     */
+    static LLMProvider fromConfig(String apiKey) {
+        QuackinglyConfig.ConfigData cfg = QuackinglyConfig.get();
+        String provider = ProviderDetector.detect(apiKey);
         String baseUrl  = ProviderDetector.baseUrlFor(provider);
         String model    = cfg.model != null && !cfg.model.isBlank() ? cfg.model
                           : ProviderDetector.defaultModelFor(provider);
 
         switch (provider) {
-            case "anthropic": return new AnthropicProvider(cfg.apiKey, model);
-            case "gemini":    return new GeminiProvider(cfg.apiKey, model);
+            case "anthropic": return new AnthropicProvider(apiKey, model);
+            case "gemini":    return new GeminiProvider(apiKey, model);
             case "none":      Quackingly.LOGGER.warn("No API key set; LLM disabled");
-            default:          return new OpenAICompatibleProvider(provider, baseUrl, cfg.apiKey, model);
+            default:          return new OpenAICompatibleProvider(provider, baseUrl, apiKey, model);
         }
     }
 
-    /* ---- OpenAI-compatible implementation (Groq, OpenAI, OpenRouter, custom) ---- */
+    /**
+     * Check if an HTTP error indicates a key/quota problem that should trigger
+     * backup-key failover.
+     */
+    static boolean isKeyOrQuotaError(int httpStatus) {
+        return httpStatus == 401      // Unauthorized — bad key
+            || httpStatus == 402      // Payment Required — quota/billing
+            || httpStatus == 403      // Forbidden — key revoked
+            || httpStatus == 429;     // Too Many Requests — rate limited
+    }
+
+    /* ---- OpenAI-compatible implementation (Groq, OpenAI, OpenRouter, Cerebras, custom) ---- */
 
     class OpenAICompatibleProvider implements LLMProvider {
         private final String provider;
@@ -76,8 +101,8 @@ public interface LLMProvider {
                     body.toString());
 
             if (resp.statusCode() >= 400) {
-                throw new RuntimeException("LLM " + provider + " HTTP " + resp.statusCode()
-                        + ": " + resp.body());
+                throw new LLMHttpException(resp.statusCode(),
+                        "LLM " + provider + " HTTP " + resp.statusCode() + ": " + resp.body());
             }
             JsonObject json = JsonParser.parseString(resp.body()).getAsJsonObject();
             return json.getAsJsonArray("choices")
@@ -126,7 +151,8 @@ public interface LLMProvider {
                             "content-type", "application/json"));
 
             if (resp.statusCode() >= 400) {
-                throw new RuntimeException("Anthropic HTTP " + resp.statusCode() + ": " + resp.body());
+                throw new LLMHttpException(resp.statusCode(),
+                        "Anthropic HTTP " + resp.statusCode() + ": " + resp.body());
             }
             JsonObject json = JsonParser.parseString(resp.body()).getAsJsonObject();
             return json.getAsJsonArray("content")
@@ -176,7 +202,8 @@ public interface LLMProvider {
                     + model + ":generateContent?key=" + apiKey;
             HttpResponse<String> resp = HttpUtils.postJson(url, "Bearer " + apiKey, body.toString());
             if (resp.statusCode() >= 400) {
-                throw new RuntimeException("Gemini HTTP " + resp.statusCode() + ": " + resp.body());
+                throw new LLMHttpException(resp.statusCode(),
+                        "Gemini HTTP " + resp.statusCode() + ": " + resp.body());
             }
             JsonObject json = JsonParser.parseString(resp.body()).getAsJsonObject();
             return json.getAsJsonArray("candidates")
@@ -185,6 +212,18 @@ public interface LLMProvider {
                     .getAsJsonArray("parts")
                     .get(0).getAsJsonObject()
                     .get("text").getAsString().trim();
+        }
+    }
+
+    /**
+     * Typed exception carrying the HTTP status code, so KeyRotation can detect
+     * 401/402/429 errors and fail over to the next backup key.
+     */
+    class LLMHttpException extends Exception {
+        public final int httpStatus;
+        public LLMHttpException(int httpStatus, String message) {
+            super(message);
+            this.httpStatus = httpStatus;
         }
     }
 }
