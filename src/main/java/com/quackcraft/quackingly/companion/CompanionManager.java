@@ -187,7 +187,7 @@ public class CompanionManager {
                 sb.append(String.format("; health %.0f/%.0f, hunger %d/20, air %d",
                         p.getHealth(), p.getMaxHealth(), p.getHungerManager().getFoodLevel(), p.getAir()));
                 if (p.isOnFire()) sb.append("; on fire");
-                if (p.isInWater()) sb.append("; in water");
+                if (p.isTouchingWater()) sb.append("; in water");
                 if (p.isSneaking()) sb.append("; sneaking");
                 if (p.isSprinting()) sb.append("; sprinting");
                 return sb.toString();
