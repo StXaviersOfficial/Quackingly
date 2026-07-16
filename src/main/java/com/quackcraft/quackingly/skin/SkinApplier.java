@@ -6,6 +6,8 @@ import com.quackcraft.quackingly.Quackingly;
 import com.quackcraft.quackingly.config.QuackinglyConfig;
 import net.minecraft.entity.player.PlayerEntity;
 
+import com.quackcraft.quackingly.skin.SkinLoader.FetchedSkin;
+
 /**
  * Applies a Mojang-fetched skin to a (fake) player.
  *
