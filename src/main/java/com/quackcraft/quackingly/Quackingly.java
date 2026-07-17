@@ -46,10 +46,9 @@ public class Quackingly implements ModInitializer {
         ServerMessageEvents.CHAT_MESSAGE.register((message, sender, params) -> {
             String text;
             try {
-                // 1.21.1: SignedMessage.getContent() returns MessageContents
                 text = message.getContent().getString();
             } catch (Throwable t) {
-                try { text = message.getSignedContent().getString(); }
+                try { text = message.getSignedContent(); }
                 catch (Throwable t2) { return; }
             }
             if (text == null || text.startsWith("/")) return;
