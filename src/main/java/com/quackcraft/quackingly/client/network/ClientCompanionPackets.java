@@ -68,6 +68,15 @@ public class ClientCompanionPackets {
         @Override public CustomPayload.Id<? extends CustomPayload> getId() { return ID; }
     }
 
+    /** Client → Server: toggle always-on listening mute (so player can mute Quackingly's mic). */
+    public record ToggleMutePayload() implements CustomPayload {
+        public static final CustomPayload.Id<ToggleMutePayload> ID =
+                new CustomPayload.Id<>(Identifier.of(Quackingly.MOD_ID, "toggle_mute"));
+        public static final PacketCodec<RegistryByteBuf, ToggleMutePayload> CODEC =
+                PacketCodec.unit(new ToggleMutePayload());
+        @Override public CustomPayload.Id<? extends CustomPayload> getId() { return ID; }
+    }
+
     // ===== Server -> Client =====
 
     public record CompanionReplyPayload(String text) implements CustomPayload {
@@ -112,5 +121,10 @@ public class ClientCompanionPackets {
     public static void sendVoiceInputStop() {
         try { ClientPlayNetworking.send(new VoiceInputStopPayload()); }
         catch (Throwable t) { Quackingly.LOGGER.warn("Failed to send voice_input_stop packet", t); }
+    }
+
+    public static void sendToggleMute() {
+        try { ClientPlayNetworking.send(new ToggleMutePayload()); }
+        catch (Throwable t) { Quackingly.LOGGER.warn("Failed to send toggle_mute packet", t); }
     }
 }

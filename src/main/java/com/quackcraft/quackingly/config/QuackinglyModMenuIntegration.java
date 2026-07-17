@@ -111,11 +111,6 @@ public class QuackinglyModMenuIntegration implements ModMenuApi {
                 .setTooltip(Text.literal("tts-1 (fast, ~250ms) or tts-1-hd (slower, higher quality)"))
                 .setSaveConsumer(v -> cfg.openaiTtsModel = v)
                 .build());
-        voice.addEntry(eb.startStrField(
-                        Text.literal("STT Model (Groq Whisper, for future voice input)"), cfg.sttModel)
-                .setDefaultValue("whisper-large-v3")
-                .setSaveConsumer(v -> cfg.sttModel = v)
-                .build());
 
         // ---- Companion category ----
         ConfigCategory comp = builder.getOrCreateCategory(Text.literal("Companion"));
@@ -150,6 +145,47 @@ public class QuackinglyModMenuIntegration implements ModMenuApi {
                 .setMin(2).setMax(50)
                 .setTooltip(Text.literal("Token optimisation: older turns are summarised into a compact memory block."))
                 .setSaveConsumer(v -> cfg.maxMemoryTurns = v)
+                .build());
+
+        // ---- Voice Input category ----
+        ConfigCategory voiceIn = builder.getOrCreateCategory(Text.literal("Voice Input (Mic)"));
+        voiceIn.addEntry(eb.startBooleanToggle(
+                        Text.literal("Voice input enabled"), cfg.voiceInputEnabled)
+                .setDefaultValue(true)
+                .setTooltip(Text.literal("Master toggle for mic input. Turn off to use text-only chat."))
+                .setSaveConsumer(v -> cfg.voiceInputEnabled = v)
+                .build());
+        voiceIn.addEntry(eb.startBooleanToggle(
+                        Text.literal("Always-on listening (like Verity)"), cfg.alwaysOnListening)
+                .setDefaultValue(true)
+                .setTooltip(Text.literal("ON (default): talk normally, Quackingly auto-detects sentence ends. OFF: hold '-' to talk."))
+                .setSaveConsumer(v -> cfg.alwaysOnListening = v)
+                .build());
+        voiceIn.addEntry(eb.startIntField(
+                        Text.literal("Silence threshold (ms)"), cfg.silenceThresholdMs)
+                .setDefaultValue(600)
+                .setMin(200).setMax(2000)
+                .setTooltip(Text.literal("Gap in ms to detect end of sentence. Lower = faster replies, higher = less false triggers."))
+                .setSaveConsumer(v -> cfg.silenceThresholdMs = v)
+                .build());
+        voiceIn.addEntry(eb.startIntField(
+                        Text.literal("Min utterance (ms)"), cfg.minUtteranceMs)
+                .setDefaultValue(400)
+                .setMin(100).setMax(2000)
+                .setTooltip(Text.literal("Ignore utterances shorter than this — filters out coughs, sneezes, background noise."))
+                .setSaveConsumer(v -> cfg.minUtteranceMs = v)
+                .build());
+        voiceIn.addEntry(eb.startIntField(
+                        Text.literal("Max utterance (ms)"), cfg.maxUtteranceMs)
+                .setDefaultValue(10000)
+                .setMin(2000).setMax(60000)
+                .setTooltip(Text.literal("Force-transcribe if utterance exceeds this — lets Quackingly reply mid-speech on long monologues."))
+                .setSaveConsumer(v -> cfg.maxUtteranceMs = v)
+                .build());
+        voiceIn.addEntry(eb.startStrField(
+                        Text.literal("STT Model (Groq Whisper)"), cfg.sttModel)
+                .setDefaultValue("whisper-large-v3")
+                .setSaveConsumer(v -> cfg.sttModel = v)
                 .build());
 
         builder.setSavingRunnable(QuackinglyConfig::save);

@@ -8,6 +8,7 @@ import com.quackcraft.quackingly.llm.LLMProvider;
 import com.quackcraft.quackingly.llm.PromptManager;
 import com.quackcraft.quackingly.network.ServerCompanionPackets;
 import com.quackcraft.quackingly.skin.SkinApplier;
+import com.quackcraft.quackingly.voice.SilenceWatcher;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.server.MinecraftServer;
@@ -62,6 +63,7 @@ public class CompanionManager {
         if (s != null && s.isAlive()) {
             s.despawn();
             sessions.remove(host.getUuid());
+            SilenceWatcher.onSessionEnd(host.getUuid());
             host.sendMessage(Text.translatable("chat.quackingly.despawned").formatted(Formatting.YELLOW));
             return false;
         }
@@ -73,8 +75,12 @@ public class CompanionManager {
         CompanionSession ns = new CompanionSession(host);
         sessions.put(host.getUuid(), ns);
         boolean ok = ns.spawn();
-        if (ok) host.sendMessage(Text.translatable("chat.quackingly.summoned").formatted(Formatting.AQUA));
-        else host.sendMessage(Text.literal("Quackingly could not spawn. Check the log.").formatted(Formatting.RED));
+        if (ok) {
+            host.sendMessage(Text.translatable("chat.quackingly.summoned").formatted(Formatting.AQUA));
+            SilenceWatcher.onSessionStart(host.getUuid());
+        } else {
+            host.sendMessage(Text.literal("Quackingly could not spawn. Check the log.").formatted(Formatting.RED));
+        }
         return ok;
     }
 
@@ -99,6 +105,7 @@ public class CompanionManager {
         if (existing != null && existing.isAlive()) {
             existing.despawn();
             sessions.remove(host.getUuid());
+            SilenceWatcher.onSessionEnd(host.getUuid());
         }
 
         if (!CARPET_PRESENT) {
@@ -114,6 +121,7 @@ public class CompanionManager {
         if (ok) {
             host.sendMessage(Text.translatable("chat.quackingly.summoned").formatted(Formatting.AQUA));
             host.sendMessage(Text.literal("Mode: " + mode).formatted(Formatting.YELLOW));
+            SilenceWatcher.onSessionStart(host.getUuid());
         } else {
             host.sendMessage(Text.literal("Quackingly could not spawn. Check the log.").formatted(Formatting.RED));
         }

@@ -14,31 +14,43 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Simple Voice Chat plugin for Quackingly.
  *
- * REAL IMPLEMENTATION — captures microphone audio from SVC.
+ * Supports TWO voice input modes:
  *
- * How it works (this is how Verity does it):
- *   1. Player holds push-to-talk key → client sends VoiceInputStartPayload to server
- *   2. Server marks this player as "recording" — starts a MicPacketCollector for them
- *   3. SVC fires MicrophonePacketEvent on the server for every Opus frame the player sends
- *      (20ms each, 960 samples at 48kHz mono)
- *   4. We decode each Opus frame via api.createDecoder().decode(opusBytes) → short[] PCM
- *   5. Collector appends PCM samples
- *   6. Player releases PTT → client sends VoiceInputStopPayload
- *   7. Server stops the collector, converts PCM → WAV, sends to Groq Whisper STT
- *   8. STT returns text → CompanionManager.sendToCompanion() → LLM → reply
+ * 1. ALWAYS-ON (default — like Dr Donut's Verity):
+ *    - When the player has Quackingly summoned AND voice input enabled in config,
+ *      the server automatically captures their mic audio.
+ *    - SVC's built-in voice activation (VAD) gates the audio: when the player
+ *      isn't speaking, SVC doesn't send mic packets, so our handler does nothing.
+ *    - A background SilenceWatcher thread detects sentence boundaries (gap in
+ *      incoming packets ≥ 600ms) and triggers transcription automatically.
+ *    - The player can talk naturally — no key to hold. Quackingly replies as
+ *      soon as the player pauses.
+ *    - The player can mute/unmute Quackingly with a toggle key (default: P).
  *
- * The MicrophonePacketEvent is a SERVER-side event (the player's mic audio arrives
- * at the server via SVC's UDP transport). This is perfect — we do the Opus decode
- * + STT call on the server, so the client doesn't need to ship WAV bytes over the
- * network.
+ * 2. PUSH-TO-TALK (optional):
+ *    - Player holds '-' to talk, releases to send.
+ *    - Useful for noisy environments or when the player wants explicit control.
+ *    - PTT overrides always-on while held.
+ *
+ * The MicrophonePacketEvent is SERVER-side (SVC sends mic audio to the server
+ * via UDP). We decode Opus → PCM on the server and transcribe there. This is
+ * exactly how Verity does it.
  */
 public class QuackinglyVoiceChatPlugin implements VoicechatPlugin {
 
     private static VoicechatApi api;
     private static OpusDecoder sharedDecoder;
 
-    /** Per-player collectors. Present only while the player is actively recording (PTT held). */
+    /**
+     * Per-player collectors.
+     * Present when:
+     *   - Always-on mode: player has Quackingly summoned + voice input enabled + not muted
+     *   - PTT mode: player is holding the PTT key
+     */
     private static final ConcurrentHashMap<UUID, MicPacketCollector> activeCollectors = new ConcurrentHashMap<>();
+
+    /** Per-player last-packet timestamps (for silence detection in always-on mode). */
+    private static final ConcurrentHashMap<UUID, Long> lastPacketTime = new ConcurrentHashMap<>();
 
     @Override
     public String getPluginId() {
@@ -48,38 +60,35 @@ public class QuackinglyVoiceChatPlugin implements VoicechatPlugin {
     @Override
     public void initialize(VoicechatApi api) {
         QuackinglyVoiceChatPlugin.api = api;
-        Quackingly.LOGGER.info("[Quackingly] Simple Voice Chat plugin initialised — mic capture ACTIVE.");
+        Quackingly.LOGGER.info("[Quackingly] Simple Voice Chat plugin initialised — mic capture ACTIVE (always-on supported).");
     }
 
     @Override
     public void registerEvents(EventRegistration registration) {
-        // Hook MicrophonePacketEvent — fires on the server for every Opus frame a player sends.
         registration.registerEvent(MicrophonePacketEvent.class, QuackinglyVoiceChatPlugin::onMicPacket);
         Quackingly.LOGGER.info("[Quackingly] Registered MicrophonePacketEvent handler.");
     }
 
     private static void onMicPacket(MicrophonePacketEvent event) {
         try {
-            // Only care about packets from players who are actively recording
             if (event.getSenderConnection() == null) return;
             if (event.getSenderConnection().getPlayer() == null) return;
 
             UUID playerUuid = event.getSenderConnection().getPlayer().getUuid();
             MicPacketCollector collector = activeCollectors.get(playerUuid);
-            if (collector == null) return; // player isn't recording — ignore
+            if (collector == null) return; // player isn't being captured — ignore
 
-            // Get the Opus-encoded audio bytes from the packet
             MicrophonePacket packet = event.getPacket();
             byte[] opusData = packet.getOpusEncodedData();
             if (opusData == null || opusData.length == 0) return;
 
-            // Decode Opus → PCM (short[], 16-bit, 48kHz mono, 960 samples = 20ms)
             OpusDecoder decoder = getDecoder();
             if (decoder == null) return;
             short[] pcm = decoder.decode(opusData);
             if (pcm == null || pcm.length == 0) return;
 
             collector.appendSamples(pcm);
+            lastPacketTime.put(playerUuid, System.currentTimeMillis());
         } catch (Throwable t) {
             Quackingly.LOGGER.debug("[Quackingly] Mic packet handling failed: {}", t.toString());
         }
@@ -96,13 +105,13 @@ public class QuackinglyVoiceChatPlugin implements VoicechatPlugin {
         return sharedDecoder;
     }
 
-    // ===== Called by ServerCompanionPackets when client toggles PTT =====
+    // ===== Collector lifecycle =====
 
+    /** Start (or restart) a collector for this player. */
     public static void startRecording(UUID playerUuid) {
-        // Replace any existing collector for this player
         MicPacketCollector old = activeCollectors.put(playerUuid, new MicPacketCollector());
         if (old != null) old.close();
-        Quackingly.LOGGER.debug("[Quackingly] Started mic recording for player {}", playerUuid);
+        lastPacketTime.put(playerUuid, System.currentTimeMillis());
     }
 
     /**
@@ -111,19 +120,37 @@ public class QuackinglyVoiceChatPlugin implements VoicechatPlugin {
      */
     public static byte[] stopRecording(UUID playerUuid) {
         MicPacketCollector collector = activeCollectors.remove(playerUuid);
+        lastPacketTime.remove(playerUuid);
         if (collector == null) return null;
         try {
-            byte[] wav = collector.toWav();
-            Quackingly.LOGGER.debug("[Quackingly] Stopped mic recording for player {}: {} bytes WAV",
-                    playerUuid, wav == null ? 0 : wav.length);
-            return wav;
+            return collector.toWav();
         } finally {
             collector.close();
         }
     }
 
+    /** Get the WAV bytes WITHOUT stopping the collector (used by SilenceWatcher for partial transcripts). */
+    public static byte[] snapshotAndReset(UUID playerUuid) {
+        MicPacketCollector collector = activeCollectors.get(playerUuid);
+        if (collector == null) return null;
+        return collector.snapshotAndReset();
+    }
+
     public static boolean isRecording(UUID playerUuid) {
         return activeCollectors.containsKey(playerUuid);
+    }
+
+    /** Time (millis) since the last mic packet arrived from this player. */
+    public static long msSinceLastPacket(UUID playerUuid) {
+        Long t = lastPacketTime.get(playerUuid);
+        if (t == null) return Long.MAX_VALUE;
+        return System.currentTimeMillis() - t;
+    }
+
+    /** Total samples collected so far for this player (for min-duration gating). */
+    public static int getSampleCount(UUID playerUuid) {
+        MicPacketCollector c = activeCollectors.get(playerUuid);
+        return c == null ? 0 : c.getSampleCount();
     }
 
     public static VoicechatApi getApi() { return api; }

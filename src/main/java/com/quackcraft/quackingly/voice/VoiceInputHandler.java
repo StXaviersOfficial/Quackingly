@@ -7,19 +7,24 @@ import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
+import java.util.UUID;
+
 /**
- * Server-side orchestrator for the voice input pipeline.
+ * Server-side orchestrator for PUSH-TO-TALK voice input.
  *
- * Flow:
- *   1. Player presses push-to-talk key (client) → VoiceInputStartPayload → onStartRecording()
- *   2. onStartRecording() tells QuackinglyVoiceChatPlugin to start a MicPacketCollector for this player
- *   3. While PTT held, SVC fires MicrophonePacketEvent → plugin decodes Opus → appends PCM to collector
- *   4. Player releases PTT → VoiceInputStopPayload → onStopRecording()
- *   5. onStopRecording() stops the collector, gets WAV bytes
- *   6. On a worker thread: GroqSTT.transcribe(wav) → text
- *   7. Forward text to CompanionManager.sendToCompanion() → LLM → reply (TTS plays on client)
+ * NOTE: Always-on listening (the default mode, like Dr Donut's Verity) is handled
+ * entirely by SilenceWatcher + QuackinglyVoiceChatPlugin — no client packets needed.
+ * The player just talks normally and SVC's VAD + our silence detection handles
+ * sentence boundaries automatically.
  *
- * The STT + LLM call happens on a worker thread so we don't block the server tick.
+ * This class only handles the OPTIONAL push-to-talk override:
+ *   - Client holds '-' key → VoiceInputStartPayload → onStartRecording()
+ *   - Client releases '-' key → VoiceInputStopPayload → onStopRecording()
+ *
+ * PTT is useful when:
+ *   - The player has a noisy background and always-on picks up too much
+ *   - The player wants explicit control over when Quackingly listens
+ *   - Always-on is disabled in config
  */
 public final class VoiceInputHandler {
 
@@ -28,28 +33,27 @@ public final class VoiceInputHandler {
     /** Called when client sends VoiceInputStartPayload (PTT pressed). */
     public static void onStartRecording(ServerPlayerEntity player) {
         try {
-            // Check that SVC plugin is loaded (mic capture requires it)
             if (!isSvcAvailable()) {
                 player.sendMessage(Text.literal(
                         "Simple Voice Chat is not installed — voice input unavailable.")
                         .formatted(Formatting.RED));
                 return;
             }
-            // Check config
             if (!com.quackcraft.quackingly.config.QuackinglyConfig.get().voiceInputEnabled) {
-                // Silently ignore — client should have caught this, but be defensive
                 return;
             }
-            // Verify Quackingly is summoned (no point capturing audio if companion isn't there)
             CompanionManager.CompanionSession session = CompanionManager.getInstance().getSession(player);
             if (session == null || !session.isAlive()) {
                 player.sendMessage(Text.literal("Summon Quackingly first (press K or type /quackingly).")
                         .formatted(Formatting.RED));
                 return;
             }
+            // PTT overrides always-on — restart the collector fresh for this PTT session
             QuackinglyVoiceChatPlugin.startRecording(player.getUuid());
+            player.sendMessage(Text.literal("● Recording... (release to send)")
+                    .formatted(Formatting.DARK_RED, Formatting.BOLD));
         } catch (Throwable t) {
-            Quackingly.LOGGER.warn("[Quackingly] Failed to start voice recording", t);
+            Quackingly.LOGGER.warn("[Quackingly] Failed to start PTT recording", t);
         }
     }
 
@@ -58,13 +62,18 @@ public final class VoiceInputHandler {
         final MinecraftServer server = player.getServer();
         if (server == null) return;
 
-        // Stop the collector, get WAV bytes
         final byte[] wavBytes;
         try {
             wavBytes = QuackinglyVoiceChatPlugin.stopRecording(player.getUuid());
         } catch (Throwable t) {
-            Quackingly.LOGGER.warn("[Quackingly] Failed to stop voice recording", t);
+            Quackingly.LOGGER.warn("[Quackingly] Failed to stop PTT recording", t);
             return;
+        }
+
+        // If always-on is enabled, restart the collector so listening continues
+        if (com.quackcraft.quackingly.config.QuackinglyConfig.get().alwaysOnListening
+                && !SilenceWatcher.isMuted(player.getUuid())) {
+            QuackinglyVoiceChatPlugin.startRecording(player.getUuid());
         }
 
         if (wavBytes == null || wavBytes.length == 0) {
@@ -73,11 +82,9 @@ public final class VoiceInputHandler {
             return;
         }
 
-        // Show the player their audio is being transcribed (subtle indicator)
         player.sendMessage(Text.literal("⟳ Transcribing...")
                 .formatted(Formatting.ITALIC, Formatting.DARK_GRAY));
 
-        // Transcribe on a worker thread (Groq STT call is blocking HTTP)
         final ServerPlayerEntity host = player;
         new Thread(() -> {
             try {
@@ -88,24 +95,36 @@ public final class VoiceInputHandler {
                                     .formatted(Formatting.GRAY)));
                     return;
                 }
-                // Show the player what was transcribed (so they know it worked)
                 final String transcript = text;
                 server.execute(() -> host.sendMessage(
                         Text.literal("[you] " + transcript).formatted(Formatting.ITALIC, Formatting.GRAY)));
-
-                // Forward to companion — LLM call + reply + TTS happens here
                 server.execute(() -> CompanionManager.getInstance().sendToCompanion(host, transcript));
             } catch (Exception e) {
-                Quackingly.LOGGER.warn("[Quackingly] STT pipeline failed", e);
+                Quackingly.LOGGER.warn("[Quackingly] PTT STT pipeline failed", e);
                 server.execute(() -> host.sendMessage(
                         Text.literal("(STT failed: " + e.getMessage() + ")").formatted(Formatting.RED)));
             }
-        }, "Quackingly-STT").start();
+        }, "Quackingly-STT-PTT").start();
+    }
+
+    /** Toggle the player's always-on listening mute state. */
+    public static void toggleAlwaysOnMute(ServerPlayerEntity player) {
+        UUID uuid = player.getUuid();
+        boolean nowMuted = !SilenceWatcher.isMuted(uuid);
+        SilenceWatcher.setMuted(uuid, nowMuted);
+        if (nowMuted) {
+            player.sendMessage(Text.literal("🔇 Quackingly is now muted (always-on listening paused)")
+                    .formatted(Formatting.YELLOW));
+        } else {
+            // Restart the collector
+            QuackinglyVoiceChatPlugin.startRecording(uuid);
+            player.sendMessage(Text.literal("🎤 Quackingly is listening (always-on)")
+                    .formatted(Formatting.AQUA));
+        }
     }
 
     private static boolean isSvcAvailable() {
         try {
-            // If the SVC plugin class loads without NoClassDefFoundError, SVC API is present
             Class.forName("de.maxhenkel.voicechat.api.VoicechatPlugin");
             return true;
         } catch (Throwable t) {

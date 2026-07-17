@@ -6,6 +6,7 @@ import com.quackcraft.quackingly.companion.CompanionManager;
 import com.quackcraft.quackingly.config.QuackinglyConfig;
 import com.quackcraft.quackingly.network.QuackinglyPayloads;
 import com.quackcraft.quackingly.network.ServerCompanionPackets;
+import com.quackcraft.quackingly.voice.SilenceWatcher;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
@@ -39,10 +40,14 @@ public class Quackingly implements ModInitializer {
         //   "Cannot register handler as no payload type has been registered"
         QuackinglyPayloads.register();
 
-        ServerLifecycleEvents.SERVER_STARTED.register(server ->
-                CompanionManager.getInstance().onServerStarted(server));
-        ServerLifecycleEvents.SERVER_STOPPING.register(server ->
-                CompanionManager.getInstance().onServerStopped());
+        ServerLifecycleEvents.SERVER_STARTED.register(server -> {
+            CompanionManager.getInstance().onServerStarted(server);
+            SilenceWatcher.start(server);
+        });
+        ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+            SilenceWatcher.stop();
+            CompanionManager.getInstance().onServerStopped();
+        });
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
                 QuackSkinCommand.register(dispatcher));

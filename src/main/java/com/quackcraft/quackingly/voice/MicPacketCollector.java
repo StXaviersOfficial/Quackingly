@@ -87,6 +87,19 @@ public class MicPacketCollector {
         return wav.toByteArray();
     }
 
+    /**
+     * Take a snapshot of the current PCM, build a WAV, then reset the collector
+     * so it can continue accumulating fresh audio. Used by the SilenceWatcher
+     * for sentence-boundary transcription without stopping the collector.
+     */
+    public synchronized byte[] snapshotAndReset() {
+        byte[] wav = toWav();
+        // Reset internal state
+        pcmOut.reset();
+        sampleCount = 0;
+        return wav;
+    }
+
     public int getSampleCount() { return sampleCount; }
     public double getDurationSeconds() { return (double) sampleCount / SAMPLE_RATE; }
 

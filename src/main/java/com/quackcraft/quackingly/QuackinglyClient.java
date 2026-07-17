@@ -18,10 +18,15 @@ import org.lwjgl.glfw.GLFW;
  * Client entrypoint. Handles:
  * - Title-screen keybind (Q) -> WorldPickerScreen
  * - In-game keybind (K) -> summon/despawn Quackingly
- * - Push-to-talk keybind (-)
+ * - Push-to-talk keybind (-) — optional manual override
+ * - Mute-toggle keybind (P) — mute/unmute always-on listening
  * - Client-side packet receivers:
  *     CompanionReplyPayload          → triggers TTS playback
  *     OpenConfirmationScreenPayload  → opens ConfirmSummonScreen (from /quackingly)
+ *
+ * Always-on voice input (like Dr Donut's Verity) is the default — no key needed.
+ * The server's SilenceWatcher detects sentence boundaries automatically via
+ * SVC's VAD + a 600ms silence gap.
  */
 public class QuackinglyClient implements ClientModInitializer {
     public static final String CATEGORY = "key.quackingly.category";
@@ -29,6 +34,7 @@ public class QuackinglyClient implements ClientModInitializer {
     private static KeyBinding openMenuKey;
     private static KeyBinding summonKey;
     private static KeyBinding talkKey;
+    private static KeyBinding muteKey;
 
     @Override
     public void onInitializeClient() {
@@ -50,6 +56,12 @@ public class QuackinglyClient implements ClientModInitializer {
                 "key.quackingly.talk",
                 InputUtil.Type.KEYSYM,
                 GLFW.GLFW_KEY_MINUS,
+                CATEGORY));
+
+        muteKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.quackingly.mute",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_P,
                 CATEGORY));
 
         ClientTickEvents.END_CLIENT_TICK.register(this::onEndTick);
@@ -101,8 +113,12 @@ public class QuackinglyClient implements ClientModInitializer {
             while (talkKey.wasPressed()) {
                 com.quackcraft.quackingly.voice.ClientVoiceController.togglePushToTalk();
             }
+            while (muteKey.wasPressed()) {
+                ClientCompanionPackets.sendToggleMute();
+            }
         }
     }
 
     public static KeyBinding getTalkKey() { return talkKey; }
+    public static KeyBinding getMuteKey() { return muteKey; }
 }

@@ -64,6 +64,15 @@ public final class ServerCompanionPackets {
                     context.server().execute(() ->
                             VoiceInputHandler.onStopRecording(player));
                 });
+
+        // Client -> Server: toggle always-on listening mute
+        ServerPlayNetworking.registerGlobalReceiver(ClientCompanionPackets.ToggleMutePayload.ID,
+                (payload, context) -> {
+                    ServerPlayerEntity player = context.player();
+                    if (player == null) return;
+                    context.server().execute(() ->
+                            VoiceInputHandler.toggleAlwaysOnMute(player));
+                });
     }
 
     /** Server -> Client: tell client to open the "Add Quackingly?" confirmation popup. */

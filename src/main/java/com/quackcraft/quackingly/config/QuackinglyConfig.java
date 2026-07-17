@@ -81,7 +81,11 @@ public class QuackinglyConfig {
 
         // Behaviour
         public String defaultMode = "normal";    // "normal" | "unhinged"
-        public boolean voiceInputEnabled = true; // voice input (PTT) — requires Simple Voice Chat + Groq key
+        public boolean voiceInputEnabled = true; // master toggle for voice input
+        public boolean alwaysOnListening = true; // always-on voice (like Dr Donut's Verity) — no PTT needed
+        public int silenceThresholdMs = 600;     // gap in ms to detect end of sentence
+        public int minUtteranceMs = 400;         // ignore utterances shorter than this (filters out coughs etc)
+        public int maxUtteranceMs = 10000;       // force-transcribe if utterance exceeds this (prevents runaway)
         public boolean autoSummon = false;
         public boolean followPlayer = true;      // companion AI: follow host
         public boolean lookAtPlayer = true;      // companion AI: face host when close
