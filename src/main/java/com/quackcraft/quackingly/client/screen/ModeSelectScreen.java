@@ -8,7 +8,6 @@ import net.minecraft.client.gui.screen.world.SelectWorldScreen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
-import net.minecraft.world.level.storage.LevelStorage;
 
 import java.io.File;
 
@@ -84,13 +83,12 @@ public class ModeSelectScreen extends Screen {
 
         try {
             MinecraftClient mc = MinecraftClient.getInstance();
-            LevelStorage storage = mc.getLevelStorage();
-            // createSession takes the world folder name (e.g. "New World")
-            LevelStorage.Session session = storage.createSession(worldDir.getName());
-
-            // Start loading the world — this shows LevelLoadingScreen automatically.
-            // Same code path as vanilla WorldListWidget.WorldEntry#play.
-            mc.createIntegratedServerLoader().start(session, mc.isDemo());
+            // In 1.21.1, IntegratedServerLoader.start(String levelName, Runnable onClose)
+            // handles LevelStorage.Session internally and shows LevelLoadingScreen.
+            mc.createIntegratedServerLoader().start(worldDir.getName(), () -> {
+                // onClose callback — return to title screen if load is cancelled
+                mc.setScreen(parent);
+            });
         } catch (Throwable t) {
             Quackingly.LOGGER.error("[Quackingly] Failed to launch world '{}' directly, falling back to vanilla world list",
                     worldDir.getName(), t);
