@@ -36,6 +36,10 @@ public class QuackinglyClient implements ClientModInitializer {
     private static KeyBinding talkKey;
     private static KeyBinding muteKey;
 
+    // Auto-summon flag: set when world is launched from "Play with Quackingly" button
+    private static boolean autoSummonOnJoin = false;
+    private static String autoSummonMode = "normal";
+
     @Override
     public void onInitializeClient() {
         QuackinglyConfig.load();
@@ -95,7 +99,29 @@ public class QuackinglyClient implements ClientModInitializer {
         }
     }
 
+    public static void setAutoSummonOnJoin(boolean val, String mode) {
+        autoSummonOnJoin = val;
+        autoSummonMode = mode;
+    }
+
     private void onEndTick(MinecraftClient client) {
+        // Auto-summon Quackingly when world was launched from "Play with Quackingly"
+        if (autoSummonOnJoin && client.world != null && client.player != null && client.currentScreen == null) {
+            autoSummonOnJoin = false; // only fire once
+            // Send summon with mode packet after a short delay (let world finish loading)
+            new Thread(() -> {
+                try { Thread.sleep(2000); } catch (InterruptedException ie) { return; }
+                client.execute(() -> {
+                    ClientCompanionPackets.sendSummonWithMode(autoSummonMode);
+                    if (client.player != null) {
+                        client.player.sendMessage(net.minecraft.text.Text.literal(
+                                "Auto-summoning Quackingly (" + autoSummonMode + " mode)...")
+                                .formatted(net.minecraft.util.Formatting.AQUA));
+                    }
+                });
+            }, "Quackingly-AutoSummon").start();
+        }
+
         // Title-screen keybind (Q) → WorldPickerScreen
         boolean onTitle = client.currentScreen == null
                 || client.currentScreen instanceof net.minecraft.client.gui.screen.TitleScreen;

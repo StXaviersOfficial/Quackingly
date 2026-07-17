@@ -39,7 +39,7 @@ public final class CarpetSpawnHelper {
                 pos,
                 host.getYaw(), 0f,
                 host.getWorld().getRegistryKey(),
-                GameMode.SURVIVAL,
+                GameMode.CREATIVE,  // Creative so he doesn't die to mobs
                 false);
     }
 

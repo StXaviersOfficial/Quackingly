@@ -30,11 +30,16 @@ import static net.minecraft.server.command.CommandManager.literal;
 public class QuackSkinCommand {
 
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
-        // /quackingly — opens confirmation popup on the client
+        // /quackingly — opens confirmation popup
         dispatcher.register(literal("quackingly")
                 .executes(QuackSkinCommand::quackinglyConfirm));
 
-        // /quack — direct command tree (for advanced users)
+        // /q <message> — quick talk to Quackingly (short, easy to type)
+        dispatcher.register(literal("q")
+                .then(argument("message", com.mojang.brigadier.arguments.StringArgumentType.greedyString())
+                        .executes(ctx -> quickSay(ctx))));
+
+        // /quack — direct command tree
         dispatcher.register(literal("quack")
             .then(literal("skin")
                 .then(literal("set")
@@ -48,6 +53,15 @@ public class QuackSkinCommand {
                 .then(literal("normal").executes(c -> mode(c, "normal")))
                 .then(literal("unhinged").executes(c -> mode(c, "unhinged"))))
         );
+    }
+
+    /** /q <message> — quick way to talk to Quackingly without typing /quack say */
+    private static int quickSay(CommandContext<ServerCommandSource> ctx) {
+        ServerPlayerEntity player = ctx.getSource().getPlayer();
+        if (player == null) return 0;
+        String msg = com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "message");
+        CompanionManager.getInstance().sendToCompanion(player, msg);
+        return 1;
     }
 
     /**

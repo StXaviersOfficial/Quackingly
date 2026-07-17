@@ -79,20 +79,19 @@ public class ModeSelectScreen extends Screen {
         com.quackcraft.quackingly.config.QuackinglyConfig.get().defaultMode = selectedMode;
         com.quackcraft.quackingly.config.QuackinglyConfig.save();
 
+        // Set flag so the client auto-summons Quackingly after world join
+        com.quackcraft.quackingly.QuackinglyClient.setAutoSummonOnJoin(true, selectedMode);
+
         if (client == null || worldDir == null) return;
 
         try {
             MinecraftClient mc = MinecraftClient.getInstance();
-            // In 1.21.1, IntegratedServerLoader.start(String levelName, Runnable onClose)
-            // handles LevelStorage.Session internally and shows LevelLoadingScreen.
             mc.createIntegratedServerLoader().start(worldDir.getName(), () -> {
-                // onClose callback — return to title screen if load is cancelled
                 mc.setScreen(parent);
             });
         } catch (Throwable t) {
-            Quackingly.LOGGER.error("[Quackingly] Failed to launch world '{}' directly, falling back to vanilla world list",
+            com.quackcraft.quackingly.Quackingly.LOGGER.error("[Quackingly] Failed to launch world '{}' directly, falling back to vanilla world list",
                     worldDir.getName(), t);
-            // Fallback: open vanilla select-world screen so user can try manually
             client.setScreen(new SelectWorldScreen(parent));
         }
     }
