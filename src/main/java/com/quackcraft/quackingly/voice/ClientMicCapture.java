@@ -5,8 +5,6 @@ import com.quackcraft.quackingly.client.network.ClientCompanionPackets;
 
 import javax.sound.sampled.*;
 import java.io.ByteArrayOutputStream;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 
 /**
  * Client-side microphone capture using Java Sound API (TargetDataLine).
