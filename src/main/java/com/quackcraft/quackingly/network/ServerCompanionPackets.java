@@ -3,6 +3,7 @@ package com.quackcraft.quackingly.network;
 import com.quackcraft.quackingly.Quackingly;
 import com.quackcraft.quackingly.client.network.ClientCompanionPackets;
 import com.quackcraft.quackingly.companion.CompanionManager;
+import com.quackcraft.quackingly.voice.VoiceInputHandler;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.server.network.ServerPlayerEntity;
 
