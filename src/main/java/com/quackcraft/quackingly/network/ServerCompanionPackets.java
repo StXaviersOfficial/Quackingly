@@ -9,15 +9,15 @@ import net.minecraft.server.network.ServerPlayerEntity;
 /**
  * Server-side packet receivers + senders for Quackingly.
  *
- * Registered in Quackingly#onInitialize (common side) so they're available on
- * any integrated or dedicated server.
+ * Registered in Quackingly#onInitialize (common side) after payload types
+ * are registered in QuackinglyPayloads.register().
  */
 public final class ServerCompanionPackets {
 
     private ServerCompanionPackets() {}
 
     public static void register() {
-        // Client -> Server: toggle summon/despawn
+        // Client -> Server: toggle summon/despawn (K keybind)
         ServerPlayNetworking.registerGlobalReceiver(ClientCompanionPackets.ToggleSummonPayload.ID,
                 (payload, context) -> {
                     ServerPlayerEntity player = context.player();
@@ -35,12 +35,28 @@ public final class ServerCompanionPackets {
                     context.server().execute(() ->
                             CompanionManager.getInstance().sendToCompanion(player, text));
                 });
+
+        // Client -> Server: summon with specific mode (from /quackingly confirmation flow)
+        ServerPlayNetworking.registerGlobalReceiver(ClientCompanionPackets.SummonWithModePayload.ID,
+                (payload, context) -> {
+                    ServerPlayerEntity player = context.player();
+                    if (player == null) return;
+                    String mode = payload.mode();
+                    context.server().execute(() ->
+                            CompanionManager.getInstance().summonWithMode(player, mode));
+                });
     }
 
-    /**
-     * Server -> Client: tell the host client that Quackingly just said something.
-     * The client will then synthesise TTS audio and play it.
-     */
+    /** Server -> Client: tell client to open the "Add Quackingly?" confirmation popup. */
+    public static void sendOpenConfirmation(ServerPlayerEntity host) {
+        try {
+            ServerPlayNetworking.send(host, new ClientCompanionPackets.OpenConfirmationScreenPayload());
+        } catch (Throwable t) {
+            Quackingly.LOGGER.warn("Failed to send open_confirmation packet", t);
+        }
+    }
+
+    /** Server -> Client: Quackingly's reply text (triggers TTS on client). */
     public static void sendTtsReply(ServerPlayerEntity host, String replyText) {
         try {
             ServerPlayNetworking.send(host, new ClientCompanionPackets.CompanionReplyPayload(replyText));

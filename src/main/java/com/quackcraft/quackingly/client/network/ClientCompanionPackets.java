@@ -4,22 +4,25 @@ import com.quackcraft.quackingly.Quackingly;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.network.RegistryByteBuf;
 import net.minecraft.network.codec.PacketCodec;
+import net.minecraft.network.codec.PacketCodecs;
 import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
-import net.minecraft.network.codec.PacketCodecs;
-
-import java.nio.charset.StandardCharsets;
 
 /**
- * Client -> Server packets for Quackingly.
+ * All custom network payloads for Quackingly.
  *
- * Packets:
- *   TOGGLE_SUMMON       — no payload, just toggle spawn state
- *   CHAT_TO_COMPANION   — String text, server forwards to CompanionManager
+ * Client -> Server (C2S):
+ *   ToggleSummonPayload       — toggle spawn/despawn (K keybind)
+ *   ChatToCompanionPayload    — send text to Quackingly
+ *   SummonWithModePayload     — spawn Quackingly with a specific mode (from /quackingly flow)
  *
- * Uses the Fabric API 1.21.1 CustomPayload + PacketCodec pattern.
+ * Server -> Client (S2C):
+ *   CompanionReplyPayload          — Quackingly's reply text (triggers TTS)
+ *   OpenConfirmationScreenPayload  — tells client to open the "Add Quackingly?" popup
  */
 public class ClientCompanionPackets {
+
+    // ===== Client -> Server =====
 
     public record ToggleSummonPayload() implements CustomPayload {
         public static final CustomPayload.Id<ToggleSummonPayload> ID =
@@ -33,44 +36,53 @@ public class ClientCompanionPackets {
         public static final CustomPayload.Id<ChatToCompanionPayload> ID =
                 new CustomPayload.Id<>(Identifier.of(Quackingly.MOD_ID, "chat_to_companion"));
         public static final PacketCodec<RegistryByteBuf, ChatToCompanionPayload> CODEC =
-                PacketCodec.tuple(
-                        PacketCodecs.STRING,
-                        ChatToCompanionPayload::text,
-                        ChatToCompanionPayload::new);
+                PacketCodec.tuple(PacketCodecs.STRING, ChatToCompanionPayload::text, ChatToCompanionPayload::new);
         @Override public CustomPayload.Id<? extends CustomPayload> getId() { return ID; }
         public String text() { return text; }
     }
 
-    /**
-     * Server -> Client: Quackingly just said this. The client should:
-     *   1. Optionally synthesise TTS audio via OpenAI (if voice enabled + TTS key set)
-     *   2. Play the audio at the companion's position
-     */
+    public record SummonWithModePayload(String mode) implements CustomPayload {
+        public static final CustomPayload.Id<SummonWithModePayload> ID =
+                new CustomPayload.Id<>(Identifier.of(Quackingly.MOD_ID, "summon_with_mode"));
+        public static final PacketCodec<RegistryByteBuf, SummonWithModePayload> CODEC =
+                PacketCodec.tuple(PacketCodecs.STRING, SummonWithModePayload::mode, SummonWithModePayload::new);
+        @Override public CustomPayload.Id<? extends CustomPayload> getId() { return ID; }
+        public String mode() { return mode; }
+    }
+
+    // ===== Server -> Client =====
+
     public record CompanionReplyPayload(String text) implements CustomPayload {
         public static final CustomPayload.Id<CompanionReplyPayload> ID =
                 new CustomPayload.Id<>(Identifier.of(Quackingly.MOD_ID, "companion_reply"));
         public static final PacketCodec<RegistryByteBuf, CompanionReplyPayload> CODEC =
-                PacketCodec.tuple(
-                        PacketCodecs.STRING,
-                        CompanionReplyPayload::text,
-                        CompanionReplyPayload::new);
+                PacketCodec.tuple(PacketCodecs.STRING, CompanionReplyPayload::text, CompanionReplyPayload::new);
         @Override public CustomPayload.Id<? extends CustomPayload> getId() { return ID; }
         public String text() { return text; }
     }
 
+    public record OpenConfirmationScreenPayload() implements CustomPayload {
+        public static final CustomPayload.Id<OpenConfirmationScreenPayload> ID =
+                new CustomPayload.Id<>(Identifier.of(Quackingly.MOD_ID, "open_confirmation"));
+        public static final PacketCodec<RegistryByteBuf, OpenConfirmationScreenPayload> CODEC =
+                PacketCodec.unit(new OpenConfirmationScreenPayload());
+        @Override public CustomPayload.Id<? extends CustomPayload> getId() { return ID; }
+    }
+
+    // ===== Send helpers =====
+
     public static void sendToggleSummon() {
-        try {
-            ClientPlayNetworking.send(new ToggleSummonPayload());
-        } catch (Throwable t) {
-            Quackingly.LOGGER.warn("Failed to send toggle_summon packet", t);
-        }
+        try { ClientPlayNetworking.send(new ToggleSummonPayload()); }
+        catch (Throwable t) { Quackingly.LOGGER.warn("Failed to send toggle_summon packet", t); }
     }
 
     public static void sendChatToCompanion(String text) {
-        try {
-            ClientPlayNetworking.send(new ChatToCompanionPayload(text));
-        } catch (Throwable t) {
-            Quackingly.LOGGER.warn("Failed to send chat_to_companion packet", t);
-        }
+        try { ClientPlayNetworking.send(new ChatToCompanionPayload(text)); }
+        catch (Throwable t) { Quackingly.LOGGER.warn("Failed to send chat_to_companion packet", t); }
+    }
+
+    public static void sendSummonWithMode(String mode) {
+        try { ClientPlayNetworking.send(new SummonWithModePayload(mode)); }
+        catch (Throwable t) { Quackingly.LOGGER.warn("Failed to send summon_with_mode packet", t); }
     }
 }

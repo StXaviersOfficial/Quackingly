@@ -4,6 +4,7 @@ import com.quackcraft.quackingly.command.QuackSkinCommand;
 import com.quackcraft.quackingly.companion.CompanionBrain;
 import com.quackcraft.quackingly.companion.CompanionManager;
 import com.quackcraft.quackingly.config.QuackinglyConfig;
+import com.quackcraft.quackingly.network.QuackinglyPayloads;
 import com.quackcraft.quackingly.network.ServerCompanionPackets;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -16,10 +17,12 @@ import org.slf4j.LoggerFactory;
  *
  * Quackingly is a non-horror, Verity-style AI companion for Minecraft Fabric 1.21.1.
  * - Player-model bot via Carpet fake player system
- * - LLM bridge (Groq by default, auto-detects OpenAI / OpenRouter / Anthropic / Gemini / custom)
- * - Voice via Simple Voice Chat (Groq Whisper STT + OpenAI TTS)
+ * - LLM bridge (Groq by default, auto-detects OpenAI / OpenRouter / Anthropic / Gemini / Cerebras / custom)
+ * - Voice output via Fish Audio TTS (free, Verity voice) or OpenAI TTS (fallback)
  * - Skin loaded from Mojang session API (default username: "Quack")
  * - Two chat modes: Normal (friendly) and Unhinged (Grok-style roast)
+ * - Backup API keys with memory persistence
+ * - Response mode: chat_only / voice_only / both
  */
 public class Quackingly implements ModInitializer {
     public static final String MOD_ID = "quackingly";
@@ -28,8 +31,13 @@ public class Quackingly implements ModInitializer {
     @Override
     public void onInitialize() {
         QuackinglyConfig.load();
-        LOGGER.info("[Quackingly] Initialising. Default provider hint: {}",
+        LOGGER.info("[Quackingly] Initialising v1.2.0. Default provider hint: {}",
                 QuackinglyConfig.get().detectedProvider);
+
+        // CRITICAL: Register payload types BEFORE registering receivers.
+        // If this is skipped, Fabric 1.21.1 crashes with:
+        //   "Cannot register handler as no payload type has been registered"
+        QuackinglyPayloads.register();
 
         ServerLifecycleEvents.SERVER_STARTED.register(server ->
                 CompanionManager.getInstance().onServerStarted(server));

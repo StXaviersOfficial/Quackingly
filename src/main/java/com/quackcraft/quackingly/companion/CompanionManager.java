@@ -82,10 +82,42 @@ public class CompanionManager {
     public void sendToCompanion(ServerPlayerEntity host, String message) {
         CompanionSession s = sessions.get(host.getUuid());
         if (s == null || !s.isAlive()) {
-            host.sendMessage(Text.literal("Summon Quackingly first (press K).").formatted(Formatting.RED));
+            host.sendMessage(Text.literal("Summon Quackingly first (press K or type /quackingly).").formatted(Formatting.RED));
             return;
         }
         s.handleUserMessage(host, message);
+    }
+
+    /**
+     * Summon Quackingly with a specific mode (called from the /quackingly
+     * confirmation flow). If already summoned, despawn first then respawn
+     * with the new mode.
+     */
+    public boolean summonWithMode(ServerPlayerEntity host, String mode) {
+        // Despawn existing session if any
+        CompanionSession existing = sessions.get(host.getUuid());
+        if (existing != null && existing.isAlive()) {
+            existing.despawn();
+            sessions.remove(host.getUuid());
+        }
+
+        if (!CARPET_PRESENT) {
+            host.sendMessage(Text.literal("Quackingly needs the Carpet mod to spawn. " +
+                    "Install Carpet (1.21.1) from Modrinth and try again.").formatted(Formatting.RED));
+            return false;
+        }
+
+        CompanionSession ns = new CompanionSession(host);
+        ns.setMode(mode);
+        sessions.put(host.getUuid(), ns);
+        boolean ok = ns.spawn();
+        if (ok) {
+            host.sendMessage(Text.translatable("chat.quackingly.summoned").formatted(Formatting.AQUA));
+            host.sendMessage(Text.literal("Mode: " + mode).formatted(Formatting.YELLOW));
+        } else {
+            host.sendMessage(Text.literal("Quackingly could not spawn. Check the log.").formatted(Formatting.RED));
+        }
+        return ok;
     }
 
     public CompanionSession getSession(ServerPlayerEntity host) {

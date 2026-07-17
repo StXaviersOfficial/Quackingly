@@ -5,6 +5,7 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.quackcraft.quackingly.Quackingly;
 import com.quackcraft.quackingly.companion.CompanionManager;
+import com.quackcraft.quackingly.network.ServerCompanionPackets;
 import com.quackcraft.quackingly.skin.SkinApplier;
 import com.quackcraft.quackingly.skin.SkinLoader;
 import net.minecraft.server.command.ServerCommandSource;
@@ -16,15 +17,24 @@ import static net.minecraft.server.command.CommandManager.argument;
 import static net.minecraft.server.command.CommandManager.literal;
 
 /**
- * /quack skin set <username>  — fetch the Mojang skin and apply to Quackingly
- * /quack skin reset           — back to default (config.defaultSkinUser, "Quack")
- * /quack summon               — spawn Quackingly
- * /quack despawn              — despawn Quackingly
- * /quack mode <normal|unhinged>  — switch chat mode on the live companion
+ * Commands for Quackingly.
+ *
+ * /quackingly              — opens confirmation popup (Are you sure? → mode select → spawn)
+ * /quack summon            — direct summon (uses config default mode)
+ * /quack despawn           — direct despawn
+ * /quack skin set <user>   — apply that player's skin to Quackingly
+ * /quack skin reset        — back to default skin
+ * /quack mode normal       — switch to normal mode on live companion
+ * /quack mode unhinged     — switch to unhinged mode on live companion
  */
 public class QuackSkinCommand {
 
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
+        // /quackingly — opens confirmation popup on the client
+        dispatcher.register(literal("quackingly")
+                .executes(QuackSkinCommand::quackinglyConfirm));
+
+        // /quack — direct command tree (for advanced users)
         dispatcher.register(literal("quack")
             .then(literal("skin")
                 .then(literal("set")
@@ -40,6 +50,33 @@ public class QuackSkinCommand {
         );
     }
 
+    /**
+     * /quackingly — sends a packet to the client to open the confirmation popup.
+     * The popup asks "Are you sure you want to add Quackingly to this world?"
+     * If the player clicks Yes, a mode-select screen opens (Normal/Unhinged).
+     * The mode select then sends a SummonWithModePayload to the server.
+     */
+    private static int quackinglyConfirm(CommandContext<ServerCommandSource> ctx) {
+        ServerPlayerEntity player = ctx.getSource().getPlayer();
+        if (player == null) {
+            ctx.getSource().sendFeedback(() ->
+                    Text.literal("Run this as a player.").formatted(Formatting.RED), false);
+            return 0;
+        }
+        // Check if already summoned — if so, offer to despawn instead
+        CompanionManager.CompanionSession existing = CompanionManager.getInstance().getSession(player);
+        if (existing != null && existing.isAlive()) {
+            // Already summoned — toggle (despawn)
+            CompanionManager.getInstance().toggle(player);
+            return 1;
+        }
+        // Not summoned — send packet to open confirmation popup on client
+        ServerCompanionPackets.sendOpenConfirmation(player);
+        ctx.getSource().sendFeedback(() ->
+                Text.literal("Opening Quackingly confirmation...").formatted(Formatting.GRAY), false);
+        return 1;
+    }
+
     private static int skinSet(CommandContext<ServerCommandSource> ctx) {
         ServerPlayerEntity player = ctx.getSource().getPlayer();
         if (player == null) {
@@ -49,12 +86,11 @@ public class QuackSkinCommand {
         String username = StringArgumentType.getString(ctx, "username");
         CompanionManager.CompanionSession s = CompanionManager.getInstance().getSession(player);
         if (s == null || !s.isAlive()) {
-            player.sendMessage(Text.literal("Summon Quackingly first (/quack summon).").formatted(Formatting.RED));
+            player.sendMessage(Text.literal("Summon Quackingly first (/quackingly).").formatted(Formatting.RED));
             return 0;
         }
         try {
             SkinLoader.FetchedSkin skin = SkinLoader.fetch(username);
-            // We can't reach the EntityPlayerMPFake directly without exposing it; route through manager.
             SkinApplier.applySkinFromUsername(s.getFakePlayer(), username);
             player.sendMessage(Text.translatable("chat.quackingly.skin_set", username).formatted(Formatting.GREEN));
         } catch (Exception e) {
