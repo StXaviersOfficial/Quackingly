@@ -32,7 +32,8 @@ public final class CarpetSpawnHelper {
      */
     public static void createFakePlayer(MinecraftServer server, ServerPlayerEntity host) {
         CarpetSettings.allowSpawningOfflinePlayers = true;
-        Vec3d pos = new Vec3d(host.getX() + 1, host.getY(), host.getZ() + 1);
+        // Spawn at host's EXACT position (not +1 offset which could be over a hole/void)
+        Vec3d pos = new Vec3d(host.getX(), host.getY(), host.getZ());
         EntityPlayerMPFake.createFake(
                 FAKE_PLAYER_NAME,
                 server,

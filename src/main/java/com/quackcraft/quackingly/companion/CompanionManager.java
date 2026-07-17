@@ -227,27 +227,22 @@ public class CompanionManager {
 
         public void handleUserMessage(ServerPlayerEntity from, String text) {
             memory.addUser("[" + from.getName().getString() + "] " + text);
-
-            // Refresh key rotation in case the user changed config since last call
             rebuildKeyRotation();
-
-            // Show "thinking" indicator (pre-reply, like a typing indicator — NOT a "speaking" indicator)
             host.sendMessage(Text.literal("Quackingly is thinking...").formatted(Formatting.ITALIC, Formatting.GRAY));
 
-            // Run LLM call on a worker thread so we don't block server tick
             new Thread(() -> {
                 try {
                     String currentKey = llmKeyRotation.current();
                     if (currentKey.isBlank()) {
-                        server.execute(() -> fakePlayer.sendMessage(
-                                Text.literal("(no API key set — open Mod Menu → Quackingly)").formatted(Formatting.RED)));
+                        server.execute(() -> host.sendMessage(
+                                Text.literal("§c[Quackingly] No API key set! Open Mod Menu → Quackingly → LLM → API Key")
+                                        .formatted(Formatting.RED)));
                         return;
                     }
 
                     String reply = null;
                     Exception lastError = null;
 
-                    // Try primary key, then backups on 401/402/429 errors
                     while (reply == null && currentKey != null && !currentKey.isBlank()) {
                         try {
                             LLMProvider llm = LLMProvider.fromConfig(currentKey);
@@ -255,12 +250,15 @@ public class CompanionManager {
                             String prompt = PromptManager.systemPrompt(mode, from.getName().getString(), ctx);
                             reply = llm.chat(memory.buildForCall(prompt));
                         } catch (LLMProvider.LLMHttpException e) {
+                            Quackingly.LOGGER.error("[Quackingly] LLM HTTP {}: {}", e.httpStatus, e.getMessage());
                             if (LLMProvider.isKeyOrQuotaError(e.httpStatus) && llmKeyRotation.hasMore()) {
-                                Quackingly.LOGGER.warn("[Quackingly] LLM key failed (HTTP {}), trying backup.",
-                                        e.httpStatus);
                                 currentKey = llmKeyRotation.advance();
                                 continue;
                             }
+                            lastError = e;
+                            break;
+                        } catch (Exception e) {
+                            Quackingly.LOGGER.error("[Quackingly] LLM call error", e);
                             lastError = e;
                             break;
                         }
@@ -268,36 +266,56 @@ public class CompanionManager {
 
                     if (reply == null) {
                         final Exception err = lastError;
-                        String msg = err != null ? err.getMessage() : "No LLM keys available.";
-                        server.execute(() -> fakePlayer.sendMessage(
-                                Text.literal("(error: " + msg + ")").formatted(Formatting.RED)));
+                        String msg;
+                        if (err instanceof LLMProvider.LLMHttpException) {
+                            int status = ((LLMProvider.LLMHttpException) err).httpStatus;
+                            msg = friendlyLlmError(status);
+                        } else if (err != null) {
+                            msg = err.getMessage();
+                        } else {
+                            msg = "No LLM keys available.";
+                        }
+                        Quackingly.LOGGER.error("[Quackingly] LLM failed, showing to host: {}", msg);
+                        final String errMsg = msg;
+                        server.execute(() -> host.sendMessage(
+                                Text.literal("§c[Quackingly] " + errMsg).formatted(Formatting.RED)));
                         return;
                     }
 
-                    // Memory persists across key swaps — Quackingly never forgets the conversation
                     memory.addAssistant(reply);
-
-                    // Determine what to show based on responseMode
                     String responseMode = QuackinglyConfig.get().responseMode;
                     if (responseMode == null || responseMode.isBlank()) responseMode = "both";
 
-                    // Chat line (visible to host + as a chat bubble above Quackingly)
                     if (responseMode.equals("chat_only") || responseMode.equals("both")) {
                         final String replyText = reply;
-                        server.execute(() -> fakePlayer.sendMessage(
-                                Text.literal("<Quackingly> " + replyText).formatted(Formatting.WHITE)));
+                        server.execute(() -> {
+                            if (fakePlayer != null && !fakePlayer.isRemoved()) {
+                                fakePlayer.sendMessage(Text.literal("<Quackingly> " + replyText).formatted(Formatting.WHITE));
+                            } else {
+                                host.sendMessage(Text.literal("<Quackingly> " + replyText).formatted(Formatting.WHITE));
+                            }
+                        });
                     }
-
-                    // Voice output (client synthesises TTS from the reply text)
                     if (responseMode.equals("voice_only") || responseMode.equals("both")) {
                         ServerCompanionPackets.sendTtsReply(from, reply);
                     }
                 } catch (Exception e) {
-                    Quackingly.LOGGER.error("LLM call failed", e);
-                    server.execute(() -> fakePlayer.sendMessage(
-                            Text.literal("(error: " + e.getMessage() + ")").formatted(Formatting.RED)));
+                    Quackingly.LOGGER.error("[Quackingly] LLM call failed", e);
+                    server.execute(() -> host.sendMessage(
+                            Text.literal("§c[Quackingly] Error: " + e.getMessage()).formatted(Formatting.RED)));
                 }
             }, "Quackingly-LLM").start();
+        }
+
+        private static String friendlyLlmError(int status) {
+            switch (status) {
+                case 401: return "API key is invalid. Get a new Groq key at console.groq.com/keys";
+                case 402: return "API quota exhausted. You need to add credits or wait.";
+                case 403: return "API key is forbidden/revoked. Get a new Groq key at console.groq.com/keys";
+                case 429: return "Rate limited — too many requests. Wait a moment and try again.";
+                case 500: case 502: case 503: return "LLM server error. Try again in a moment.";
+                default:  return "LLM error (HTTP " + status + "). Check console for details.";
+            }
         }
 
         private String describeWorld(ServerPlayerEntity p) {
