@@ -116,11 +116,51 @@ public final class VoiceInputHandler {
             player.sendMessage(Text.literal("🔇 Quackingly is now muted (always-on listening paused)")
                     .formatted(Formatting.YELLOW));
         } else {
-            // Restart the collector
             QuackinglyVoiceChatPlugin.startRecording(uuid);
             player.sendMessage(Text.literal("🎤 Quackingly is listening (always-on)")
                     .formatted(Formatting.AQUA));
         }
+    }
+
+    /**
+     * Called when client sends a ClientAudioPayload (client-captured mic audio).
+     * This is the Pojav fallback — when SVC's Opus is broken, the client captures
+     * audio via Java Sound API and sends the WAV bytes to the server.
+     *
+     * The server transcribes via GroqSTT and forwards the text to the LLM.
+     */
+    public static void onClientAudio(ServerPlayerEntity player, byte[] wavBytes) {
+        final MinecraftServer server = player.getServer();
+        if (server == null) return;
+        if (wavBytes == null || wavBytes.length == 0) return;
+
+        // Verify Quackingly is summoned
+        CompanionManager.CompanionSession session = CompanionManager.getInstance().getSession(player);
+        if (session == null || !session.isAlive()) return;
+
+        player.sendMessage(Text.literal("⟳ Transcribing...")
+                .formatted(Formatting.ITALIC, Formatting.DARK_GRAY));
+
+        final ServerPlayerEntity host = player;
+        new Thread(() -> {
+            try {
+                String text = GroqSTT.transcribe(wavBytes);
+                if (text == null || text.isBlank()) {
+                    server.execute(() -> host.sendMessage(
+                            Text.literal("(couldn't make out what you said)")
+                                    .formatted(Formatting.GRAY)));
+                    return;
+                }
+                final String transcript = text;
+                server.execute(() -> host.sendMessage(
+                        Text.literal("[you] " + transcript).formatted(Formatting.ITALIC, Formatting.GRAY)));
+                server.execute(() -> CompanionManager.getInstance().sendToCompanion(host, transcript));
+            } catch (Exception e) {
+                Quackingly.LOGGER.warn("[Quackingly] Client audio STT failed", e);
+                server.execute(() -> host.sendMessage(
+                        Text.literal("(STT failed: " + e.getMessage() + ")").formatted(Formatting.RED)));
+            }
+        }, "Quackingly-STT-ClientAudio").start();
     }
 
     private static boolean isSvcAvailable() {

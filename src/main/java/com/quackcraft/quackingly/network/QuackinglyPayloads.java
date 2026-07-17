@@ -45,6 +45,10 @@ public final class QuackinglyPayloads {
                 ClientCompanionPackets.ToggleMutePayload.ID,
                 ClientCompanionPackets.ToggleMutePayload.CODEC);
 
+        PayloadTypeRegistry.playC2S().register(
+                ClientCompanionPackets.ClientAudioPayload.ID,
+                ClientCompanionPackets.ClientAudioPayload.CODEC);
+
         // Server -> Client (playS2C) payloads
         PayloadTypeRegistry.playS2C().register(
                 ClientCompanionPackets.CompanionReplyPayload.ID,
@@ -54,6 +58,6 @@ public final class QuackinglyPayloads {
                 ClientCompanionPackets.OpenConfirmationScreenPayload.ID,
                 ClientCompanionPackets.OpenConfirmationScreenPayload.CODEC);
 
-        Quackingly.LOGGER.info("[Quackingly] Registered 8 payload types (6 C2S, 2 S2C).");
+        Quackingly.LOGGER.info("[Quackingly] Registered 9 payload types (7 C2S, 2 S2C).");
     }
 }

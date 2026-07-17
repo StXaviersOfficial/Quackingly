@@ -97,6 +97,13 @@ public class QuackinglyClient implements ClientModInitializer {
         } catch (ClassNotFoundException e) {
             Quackingly.LOGGER.warn("Voice chat plugin class not found", e);
         }
+
+        // Check if client-side mic capture is available (Pojav fallback)
+        if (com.quackcraft.quackingly.voice.ClientMicCapture.isAvailable()) {
+            Quackingly.LOGGER.info("[Quackingly] Client-side mic capture available (Java Sound API). Will use as fallback if Opus is broken.");
+        } else {
+            Quackingly.LOGGER.warn("[Quackingly] Client-side mic capture NOT available. Voice input will require SVC + Opus.");
+        }
     }
 
     public static void setAutoSummonOnJoin(boolean val, String mode) {
@@ -118,6 +125,13 @@ public class QuackinglyClient implements ClientModInitializer {
                                 "Auto-summoning Quackingly (" + autoSummonMode + " mode)...")
                                 .formatted(net.minecraft.util.Formatting.AQUA));
                     }
+                    // Start client-side always-on mic capture (for Pojav where Opus is broken)
+                    new Thread(() -> {
+                        try { Thread.sleep(3000); } catch (InterruptedException ie) { return; }
+                        client.execute(() -> {
+                            com.quackcraft.quackingly.voice.ClientVoiceController.startClientAlwaysOn();
+                        });
+                    }, "Quackingly-AutoStartMic").start();
                 });
             }, "Quackingly-AutoSummon").start();
         }

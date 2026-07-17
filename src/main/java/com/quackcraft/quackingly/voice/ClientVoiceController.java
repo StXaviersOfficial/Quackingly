@@ -16,22 +16,22 @@ import java.util.concurrent.ConcurrentMap;
 /**
  * Client-side voice pipeline controller.
  *
- * Voice INPUT (push-to-talk):
- *   PTT key down  → send VoiceInputStartPayload to server
- *                   (server starts collecting mic packets from SVC's MicrophonePacketEvent)
- *   PTT key up    → send VoiceInputStopPayload to server
- *                   (server stops collecting, transcribes via Groq Whisper STT,
- *                    forwards text to CompanionManager → LLM → reply)
+ * TWO voice input paths:
  *
- * The actual audio capture happens SERVER-SIDE via the SVC plugin. The client
- * just signals when to start/stop. This is how Verity does it — the mic audio
- * is captured by SVC's transport on the server, decoded there, and transcribed
- * there. No audio bytes travel over our custom packet channel.
+ * 1. SVC + Opus (preferred, desktop):
+ *    PTT → VoiceInputStartPayload → server captures via MicrophonePacketEvent
+ *    Release → VoiceInputStopPayload → server transcribes
  *
- * Voice OUTPUT (TTS):
- *   When server sends a CompanionReplyPayload, we synthesise TTS audio via
- *   the configured provider (Fish Audio default, OpenAI fallback) and play it.
- *   32-entry TTS cache avoids re-synthesising identical replies.
+ * 2. Java Sound API (Pojav fallback when Opus is broken):
+ *    PTT → ClientMicCapture.startCapture() → captures mic locally
+ *    Release → ClientMicCapture.stopAndSend() → sends WAV to server via ClientAudioPayload
+ *    Server transcribes via GroqSTT → forwards to LLM
+ *
+ * Always-on mode:
+ *    If Opus available: server-side SilenceWatcher handles everything
+ *    If Opus broken: client-side ClientMicCapture with VAD (energy threshold + silence gap)
+ *
+ * Voice OUTPUT (TTS): unchanged — Fish Audio / OpenAI plays via Java Sound SourceDataLine
  */
 public final class ClientVoiceController {
 
@@ -40,6 +40,10 @@ public final class ClientVoiceController {
     private static boolean pttActive = false;
     private static final ConcurrentMap<String, byte[]> ttsCache = new ConcurrentHashMap<>();
     private static final int TTS_CACHE_MAX = 32;
+
+    // Client-side always-on mic capture (when Opus is broken)
+    private static Thread clientAlwaysOnThread;
+    private static volatile boolean clientAlwaysOnRunning = false;
 
     // ===== Voice input (push-to-talk) =====
 
@@ -56,11 +60,24 @@ public final class ClientVoiceController {
 
     public static void pressPtt() {
         try {
-            ClientCompanionPackets.sendVoiceInputStart();
-            pttActive = true;
-            // Show a subtle indicator that we're recording
-            MinecraftClient.getInstance().player.sendMessage(
-                    Text.literal("● Recording... (release to send)").formatted(Formatting.DARK_RED, Formatting.BOLD));
+            if (ClientMicCapture.isAvailable()) {
+                // Pojav fallback path — capture locally via Java Sound
+                boolean ok = ClientMicCapture.startCapture();
+                if (ok) {
+                    pttActive = true;
+                    MinecraftClient.getInstance().player.sendMessage(
+                            Text.literal("● Recording... (release to send)").formatted(Formatting.DARK_RED, Formatting.BOLD));
+                } else {
+                    MinecraftClient.getInstance().player.sendMessage(
+                            Text.literal("Mic capture failed — use text chat.").formatted(Formatting.RED));
+                }
+            } else {
+                // SVC path — tell server to start capturing
+                ClientCompanionPackets.sendVoiceInputStart();
+                pttActive = true;
+                MinecraftClient.getInstance().player.sendMessage(
+                        Text.literal("● Recording... (release to send)").formatted(Formatting.DARK_RED, Formatting.BOLD));
+            }
         } catch (Throwable t) {
             Quackingly.LOGGER.warn("Failed to start PTT", t);
         }
@@ -70,7 +87,13 @@ public final class ClientVoiceController {
         if (!pttActive) return;
         pttActive = false;
         try {
-            ClientCompanionPackets.sendVoiceInputStop();
+            if (ClientMicCapture.isCapturing()) {
+                // Pojav fallback — stop and send audio
+                ClientMicCapture.stopAndSend();
+            } else {
+                // SVC path — tell server to stop
+                ClientCompanionPackets.sendVoiceInputStop();
+            }
         } catch (Throwable t) {
             Quackingly.LOGGER.warn("Failed to release PTT", t);
         }
@@ -78,18 +101,64 @@ public final class ClientVoiceController {
 
     public static boolean isPttActive() { return pttActive; }
 
-    // ===== Voice output (TTS playback) =====
+    // ===== Client-side always-on mic capture (Pojav fallback) =====
 
     /**
-     * Called when the server sends us Quackingly's reply text.
-     * Synthesise TTS audio via the configured provider and play it back.
+     * Start client-side always-on mic capture with VAD.
+     * Used when Opus is broken and always-on listening is enabled.
      */
+    public static void startClientAlwaysOn() {
+        if (clientAlwaysOnRunning) return;
+        if (!ClientMicCapture.isAvailable()) return;
+        if (!QuackinglyConfig.get().alwaysOnListening) return;
+        if (!QuackinglyConfig.get().voiceInputEnabled) return;
+
+        clientAlwaysOnRunning = true;
+        clientAlwaysOnThread = new Thread(() -> {
+            Quackingly.LOGGER.info("[Quackingly] Client-side always-on mic capture started (Pojav fallback).");
+            while (clientAlwaysOnRunning) {
+                try {
+                    // Start capturing
+                    if (!ClientMicCapture.isCapturing()) {
+                        ClientMicCapture.startCapture();
+                    }
+                    // Wait for silence detection (checks every 200ms)
+                    Thread.sleep(200);
+                    // Check if we should send
+                    if (ClientMicCapture.checkAlwaysOnSilence()) {
+                        ClientMicCapture.stopAndSend();
+                        // Brief pause before restarting
+                        Thread.sleep(100);
+                    }
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
+                } catch (Throwable t) {
+                    Quackingly.LOGGER.debug("[Quackingly] Always-on mic tick error: {}", t.toString());
+                    try { Thread.sleep(1000); } catch (InterruptedException ie) { break; }
+                }
+            }
+            ClientMicCapture.stopCapture();
+            Quackingly.LOGGER.info("[Quackingly] Client-side always-on mic capture stopped.");
+        }, "Quackingly-ClientAlwaysOn");
+        clientAlwaysOnThread.setDaemon(true);
+        clientAlwaysOnThread.start();
+    }
+
+    public static void stopClientAlwaysOn() {
+        clientAlwaysOnRunning = false;
+        clientAlwaysOnThread = null;
+        ClientMicCapture.stopCapture();
+    }
+
+    // ===== Voice output (TTS playback) =====
+
     public static void onCompanionReply(String replyText) {
         if (replyText == null || replyText.isBlank()) return;
 
         TTSProvider provider = TTSProvider.fromConfig();
         if (!provider.isReady()) {
-            Quackingly.LOGGER.debug("[Quackingly] TTS provider '{}' not ready (no API key set); skipping voice.",
+            Quackingly.LOGGER.debug("[Quackingly] TTS provider '{}' not ready; skipping voice.",
                     provider.getProviderName());
             return;
         }
@@ -117,10 +186,6 @@ public final class ClientVoiceController {
         }, "Quackingly-TTS").start();
     }
 
-    /**
-     * Play back an MP3 byte[] via Java Sound API (SourceDataLine).
-     * Works on Pojav/Mojo too — no MC SoundSystem dependency.
-     */
     public static void playMp3AtCompanion(byte[] mp3Bytes) {
         MinecraftClient.getInstance().execute(() -> {
             Path tmp = null;

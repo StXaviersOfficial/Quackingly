@@ -11,42 +11,71 @@ import com.quackcraft.quackingly.skin.SkinLoader.FetchedSkin;
 /**
  * Applies a Mojang-fetched skin to a (fake) player.
  *
- * Strategy: GameProfile properties carry a "textures" Property whose value is the
- * base64 blob from Mojang's session API. We replace the textures property in-place.
+ * The default "Quack" skin is fetched ASYNC on first spawn (cached after that),
+ * so it doesn't block the server thread or cause spawn lag. On subsequent spawns,
+ * the cached skin is applied instantly.
  *
- * Client-side, Minecraft's PlayerSkinProvider will then fetch the actual PNG from
- * textures.minecraft.net and render it on the fake player.
- *
- * For /quack skin set <username>: we fetch from Mojang live, then apply.
- * For the default "Quack" skin: we fetch once on spawn, cache, and reuse.
- *
- * NOTE: We intentionally use PlayerEntity (the vanilla base class) here, not
- * Carpet's EntityPlayerMPFake. This way SkinApplier doesn't depend on Carpet
- * being present at runtime. If Carpet is missing, the apply is just a no-op
- * (no fake player exists to apply to anyway).
+ * For /quack skin set <username>: fetches from Mojang live (async), applies when ready.
  */
 public final class SkinApplier {
 
-    private static FetchedSkin defaultSkinCache;
+    private static volatile FetchedSkin defaultSkinCache;
+    private static volatile boolean defaultSkinFetchInProgress = false;
 
     private SkinApplier() {}
 
-    /** Apply the default skin (from config.defaultSkinUser, default "Quack"). */
+    /** Apply the default skin (from config.defaultSkinUser, default "Quack"). Async on first call. */
     public static void applyDefaultSkin(PlayerEntity entity) {
+        if (entity == null) return;
         String user = QuackinglyConfig.get().defaultSkinUser;
         if (user == null || user.isBlank()) user = "Quack";
-        applySkinFromUsername(entity, user);
+
+        // Fast path: cached skin available — apply immediately
+        FetchedSkin cached = defaultSkinCache;
+        if (cached != null) {
+            applyFetched(entity, cached);
+            return;
+        }
+
+        // Slow path: no cache yet — kick off async fetch, apply when done
+        if (!defaultSkinFetchInProgress) {
+            defaultSkinFetchInProgress = true;
+            final String username = user;
+            new Thread(() -> {
+                try {
+                    FetchedSkin skin = SkinLoader.fetch(username);
+                    if (skin != null) {
+                        defaultSkinCache = skin;
+                        Quackingly.LOGGER.info("[Quackingly] Default skin '{}' cached.", username);
+                    }
+                } catch (Exception e) {
+                    Quackingly.LOGGER.warn("[Quackingly] Could not fetch default skin '{}': {}", username, e.getMessage());
+                } finally {
+                    defaultSkinFetchInProgress = false;
+                }
+            }, "Quackingly-SkinFetch").start();
+        }
+        // Skin will be applied on next spawn (or when /quack skin reset is called)
     }
 
-    /** Apply a skin by fetching the given username from Mojang. */
+    /** Apply a skin by fetching the given username from Mojang (async). */
     public static void applySkinFromUsername(PlayerEntity entity, String username) {
-        try {
-            FetchedSkin skin = SkinLoader.fetch(username);
-            applyFetched(entity, skin);
-        } catch (Exception e) {
-            Quackingly.LOGGER.warn("Could not fetch skin for '{}': {}", username, e.getMessage());
-            // Fallback: leave the player with Steve/Alex (default MC behaviour).
-        }
+        if (entity == null) return;
+        new Thread(() -> {
+            try {
+                FetchedSkin skin = SkinLoader.fetch(username);
+                if (skin != null) {
+                    // Apply on the server thread (GameProfile modification must be sync)
+                    if (entity.getServer() != null) {
+                        entity.getServer().execute(() -> applyFetched(entity, skin));
+                    } else {
+                        applyFetched(entity, skin);
+                    }
+                }
+            } catch (Exception e) {
+                Quackingly.LOGGER.warn("[Quackingly] Could not fetch skin for '{}': {}", username, e.getMessage());
+            }
+        }, "Quackingly-SkinFetch-" + username).start();
     }
 
     /** Apply an already-fetched skin's GameProfile properties to the (fake) player. */
@@ -55,29 +84,15 @@ public final class SkinApplier {
         try {
             GameProfile profile = entity.getGameProfile();
             if (profile == null) {
-                Quackingly.LOGGER.warn("Cannot apply skin — player has no GameProfile.");
+                Quackingly.LOGGER.warn("[Quackingly] Cannot apply skin — player has no GameProfile.");
                 return;
             }
-            // Replace any existing textures property
             profile.getProperties().removeAll("textures");
             profile.getProperties().put("textures", new Property(
                     "textures", skin.textureBase64, skin.signatureBase64));
             Quackingly.LOGGER.info("[Quackingly] Applied skin '{}' to player.", skin.username);
         } catch (Throwable t) {
-            Quackingly.LOGGER.error("Failed to apply skin to player", t);
+            Quackingly.LOGGER.error("[Quackingly] Failed to apply skin to player", t);
         }
-    }
-
-    /** Get-or-fetch the default skin (cached after first call). */
-    public static FetchedSkin getDefaultSkinCached() {
-        if (defaultSkinCache != null) return defaultSkinCache;
-        try {
-            String user = QuackinglyConfig.get().defaultSkinUser;
-            if (user == null || user.isBlank()) user = "Quack";
-            defaultSkinCache = SkinLoader.fetch(user);
-        } catch (Exception e) {
-            Quackingly.LOGGER.warn("Could not load default Quack skin: {}", e.getMessage());
-        }
-        return defaultSkinCache;
     }
 }

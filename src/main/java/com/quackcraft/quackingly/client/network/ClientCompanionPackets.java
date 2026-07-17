@@ -77,6 +77,19 @@ public class ClientCompanionPackets {
         @Override public CustomPayload.Id<? extends CustomPayload> getId() { return ID; }
     }
 
+    /** Client → Server: client-captured mic audio (WAV bytes) for STT (Pojav fallback). */
+    public record ClientAudioPayload(byte[] audio) implements CustomPayload {
+        public static final CustomPayload.Id<ClientAudioPayload> ID =
+                new CustomPayload.Id<>(Identifier.of(Quackingly.MOD_ID, "client_audio"));
+        public static final PacketCodec<RegistryByteBuf, ClientAudioPayload> CODEC =
+                PacketCodec.tuple(
+                        PacketCodecs.BYTE_ARRAY,
+                        ClientAudioPayload::audio,
+                        ClientAudioPayload::new);
+        @Override public CustomPayload.Id<? extends CustomPayload> getId() { return ID; }
+        public byte[] audio() { return audio; }
+    }
+
     // ===== Server -> Client =====
 
     public record CompanionReplyPayload(String text) implements CustomPayload {
@@ -126,5 +139,10 @@ public class ClientCompanionPackets {
     public static void sendToggleMute() {
         try { ClientPlayNetworking.send(new ToggleMutePayload()); }
         catch (Throwable t) { Quackingly.LOGGER.warn("Failed to send toggle_mute packet", t); }
+    }
+
+    public static void sendClientAudio(byte[] audio) {
+        try { ClientPlayNetworking.send(new ClientAudioPayload(audio)); }
+        catch (Throwable t) { Quackingly.LOGGER.warn("Failed to send client_audio packet", t); }
     }
 }

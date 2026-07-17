@@ -73,6 +73,16 @@ public final class ServerCompanionPackets {
                     context.server().execute(() ->
                             VoiceInputHandler.toggleAlwaysOnMute(player));
                 });
+
+        // Client -> Server: client-captured mic audio (Pojav fallback when Opus is broken)
+        ServerPlayNetworking.registerGlobalReceiver(ClientCompanionPackets.ClientAudioPayload.ID,
+                (payload, context) -> {
+                    ServerPlayerEntity player = context.player();
+                    if (player == null) return;
+                    byte[] audio = payload.audio();
+                    context.server().execute(() ->
+                            VoiceInputHandler.onClientAudio(player, audio));
+                });
     }
 
     /** Server -> Client: tell client to open the "Add Quackingly?" confirmation popup. */
