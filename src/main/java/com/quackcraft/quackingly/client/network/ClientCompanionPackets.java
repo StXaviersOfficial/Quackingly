@@ -50,6 +50,24 @@ public class ClientCompanionPackets {
         public String mode() { return mode; }
     }
 
+    /** Client → Server: player pressed push-to-talk key, start capturing mic audio. */
+    public record VoiceInputStartPayload() implements CustomPayload {
+        public static final CustomPayload.Id<VoiceInputStartPayload> ID =
+                new CustomPayload.Id<>(Identifier.of(Quackingly.MOD_ID, "voice_input_start"));
+        public static final PacketCodec<RegistryByteBuf, VoiceInputStartPayload> CODEC =
+                PacketCodec.unit(new VoiceInputStartPayload());
+        @Override public CustomPayload.Id<? extends CustomPayload> getId() { return ID; }
+    }
+
+    /** Client → Server: player released push-to-talk key, stop capturing and transcribe. */
+    public record VoiceInputStopPayload() implements CustomPayload {
+        public static final CustomPayload.Id<VoiceInputStopPayload> ID =
+                new CustomPayload.Id<>(Identifier.of(Quackingly.MOD_ID, "voice_input_stop"));
+        public static final PacketCodec<RegistryByteBuf, VoiceInputStopPayload> CODEC =
+                PacketCodec.unit(new VoiceInputStopPayload());
+        @Override public CustomPayload.Id<? extends CustomPayload> getId() { return ID; }
+    }
+
     // ===== Server -> Client =====
 
     public record CompanionReplyPayload(String text) implements CustomPayload {
@@ -84,5 +102,15 @@ public class ClientCompanionPackets {
     public static void sendSummonWithMode(String mode) {
         try { ClientPlayNetworking.send(new SummonWithModePayload(mode)); }
         catch (Throwable t) { Quackingly.LOGGER.warn("Failed to send summon_with_mode packet", t); }
+    }
+
+    public static void sendVoiceInputStart() {
+        try { ClientPlayNetworking.send(new VoiceInputStartPayload()); }
+        catch (Throwable t) { Quackingly.LOGGER.warn("Failed to send voice_input_start packet", t); }
+    }
+
+    public static void sendVoiceInputStop() {
+        try { ClientPlayNetworking.send(new VoiceInputStopPayload()); }
+        catch (Throwable t) { Quackingly.LOGGER.warn("Failed to send voice_input_stop packet", t); }
     }
 }

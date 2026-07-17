@@ -81,7 +81,7 @@ public class QuackinglyConfig {
 
         // Behaviour
         public String defaultMode = "normal";    // "normal" | "unhinged"
-        public boolean voiceInputEnabled = false; // voice input (PTT) — needs SVC + Groq STT
+        public boolean voiceInputEnabled = true; // voice input (PTT) — requires Simple Voice Chat + Groq key
         public boolean autoSummon = false;
         public boolean followPlayer = true;      // companion AI: follow host
         public boolean lookAtPlayer = true;      // companion AI: face host when close

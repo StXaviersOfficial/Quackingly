@@ -45,6 +45,24 @@ public final class ServerCompanionPackets {
                     context.server().execute(() ->
                             CompanionManager.getInstance().summonWithMode(player, mode));
                 });
+
+        // Client -> Server: player pressed push-to-talk — start capturing mic audio
+        ServerPlayNetworking.registerGlobalReceiver(ClientCompanionPackets.VoiceInputStartPayload.ID,
+                (payload, context) -> {
+                    ServerPlayerEntity player = context.player();
+                    if (player == null) return;
+                    context.server().execute(() ->
+                            VoiceInputHandler.onStartRecording(player));
+                });
+
+        // Client -> Server: player released push-to-talk — stop, transcribe, send to LLM
+        ServerPlayNetworking.registerGlobalReceiver(ClientCompanionPackets.VoiceInputStopPayload.ID,
+                (payload, context) -> {
+                    ServerPlayerEntity player = context.player();
+                    if (player == null) return;
+                    context.server().execute(() ->
+                            VoiceInputHandler.onStopRecording(player));
+                });
     }
 
     /** Server -> Client: tell client to open the "Add Quackingly?" confirmation popup. */
