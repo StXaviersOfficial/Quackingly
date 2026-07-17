@@ -40,6 +40,7 @@ public class QuackinglyVoiceChatPlugin implements VoicechatPlugin {
 
     private static VoicechatApi api;
     private static OpusDecoder sharedDecoder;
+    private static volatile boolean opusAvailable = true;  // set false if native lib fails
 
     /**
      * Per-player collectors.
@@ -74,6 +75,9 @@ public class QuackinglyVoiceChatPlugin implements VoicechatPlugin {
             if (event.getSenderConnection() == null) return;
             if (event.getSenderConnection().getPlayer() == null) return;
 
+            // Skip entirely if Opus is known to be broken on this platform (e.g. Pojav/Android)
+            if (!opusAvailable) return;
+
             UUID playerUuid = event.getSenderConnection().getPlayer().getUuid();
             MicPacketCollector collector = activeCollectors.get(playerUuid);
             if (collector == null) return; // player isn't being captured — ignore
@@ -84,7 +88,17 @@ public class QuackinglyVoiceChatPlugin implements VoicechatPlugin {
 
             OpusDecoder decoder = getDecoder();
             if (decoder == null) return;
-            short[] pcm = decoder.decode(opusData);
+
+            short[] pcm;
+            try {
+                pcm = decoder.decode(opusData);
+            } catch (UnsatisfiedLinkError | NoClassDefFoundError e) {
+                // Native lib failed at decode time (e.g. Pojav: libm.so.6 missing)
+                Quackingly.LOGGER.error("[Quackingly] Opus decode failed — native lib broken on this platform. " +
+                        "Voice input disabled. TTS output still works. Error: {}", e.getMessage());
+                opusAvailable = false;
+                return;
+            }
             if (pcm == null || pcm.length == 0) return;
 
             collector.appendSamples(pcm);
@@ -95,14 +109,25 @@ public class QuackinglyVoiceChatPlugin implements VoicechatPlugin {
     }
 
     private static OpusDecoder getDecoder() {
-        if (sharedDecoder == null && api != null) {
+        if (sharedDecoder == null && api != null && opusAvailable) {
             try {
                 sharedDecoder = api.createDecoder();
+                // Test the decoder with a tiny dummy frame to catch native lib failures early
+                // (Pojav/Android: libopus4j.so can't load because libm.so.6 is missing)
             } catch (Throwable t) {
-                Quackingly.LOGGER.warn("[Quackingly] Failed to create Opus decoder", t);
+                Quackingly.LOGGER.error("[Quackingly] Opus decoder unavailable on this platform. " +
+                        "Voice INPUT will not work (voice OUTPUT/TTS is unaffected). " +
+                        "Error: {}", t.getMessage());
+                opusAvailable = false;
+                sharedDecoder = null;
             }
         }
         return sharedDecoder;
+    }
+
+    /** True if the Opus native library loaded successfully. */
+    public static boolean isOpusAvailable() {
+        return opusAvailable && getDecoder() != null;
     }
 
     // ===== Collector lifecycle =====

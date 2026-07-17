@@ -78,6 +78,11 @@ public final class SilenceWatcher {
 
     /** Called when a player's Quackingly session starts — begin always-on capture. */
     public static void onSessionStart(UUID playerUuid) {
+        // Check if Opus is available — if not, voice input can't work (Pojav/Android)
+        if (!QuackinglyVoiceChatPlugin.isOpusAvailable()) {
+            Quackingly.LOGGER.warn("[Quackingly] Not starting voice capture for {} — Opus native lib unavailable.", playerUuid);
+            return;
+        }
         if (!muted.containsKey(playerUuid)) {
             QuackinglyVoiceChatPlugin.startRecording(playerUuid);
         }

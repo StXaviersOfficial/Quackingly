@@ -74,14 +74,23 @@ public class CompanionManager {
         }
         CompanionSession ns = new CompanionSession(host);
         sessions.put(host.getUuid(), ns);
-        boolean ok = ns.spawn();
-        if (ok) {
-            host.sendMessage(Text.translatable("chat.quackingly.summoned").formatted(Formatting.AQUA));
-            SilenceWatcher.onSessionStart(host.getUuid());
-        } else {
-            host.sendMessage(Text.literal("Quackingly could not spawn. Check the log.").formatted(Formatting.RED));
-        }
-        return ok;
+        host.sendMessage(Text.literal("Spawning Quackingly...").formatted(Formatting.GRAY));
+        ns.spawnAsync(ok -> {
+            if (ok) {
+                host.sendMessage(Text.translatable("chat.quackingly.summoned").formatted(Formatting.AQUA));
+                SilenceWatcher.onSessionStart(host.getUuid());
+                // Warn if voice input won't work (Opus broken on this platform)
+                if (!com.quackcraft.quackingly.voice.QuackinglyVoiceChatPlugin.isOpusAvailable()) {
+                    host.sendMessage(Text.literal("⚠ Voice input unavailable on this platform (Opus native lib missing). " +
+                            "Use text chat to talk to Quackingly. Voice output (TTS) still works.")
+                            .formatted(Formatting.YELLOW));
+                }
+            } else {
+                sessions.remove(host.getUuid());
+                host.sendMessage(Text.literal("Quackingly could not spawn. Check the log.").formatted(Formatting.RED));
+            }
+        });
+        return true;
     }
 
     /** Send a chat message TO Quackingly on behalf of a player. */
@@ -117,15 +126,18 @@ public class CompanionManager {
         CompanionSession ns = new CompanionSession(host);
         ns.setMode(mode);
         sessions.put(host.getUuid(), ns);
-        boolean ok = ns.spawn();
-        if (ok) {
-            host.sendMessage(Text.translatable("chat.quackingly.summoned").formatted(Formatting.AQUA));
-            host.sendMessage(Text.literal("Mode: " + mode).formatted(Formatting.YELLOW));
-            SilenceWatcher.onSessionStart(host.getUuid());
-        } else {
-            host.sendMessage(Text.literal("Quackingly could not spawn. Check the log.").formatted(Formatting.RED));
-        }
-        return ok;
+        host.sendMessage(Text.literal("Spawning Quackingly...").formatted(Formatting.GRAY));
+        ns.spawnAsync(ok -> {
+            if (ok) {
+                host.sendMessage(Text.translatable("chat.quackingly.summoned").formatted(Formatting.AQUA));
+                host.sendMessage(Text.literal("Mode: " + mode).formatted(Formatting.YELLOW));
+                SilenceWatcher.onSessionStart(host.getUuid());
+            } else {
+                sessions.remove(host.getUuid());
+                host.sendMessage(Text.literal("Quackingly could not spawn. Check the log.").formatted(Formatting.RED));
+            }
+        });
+        return true;
     }
 
     public CompanionSession getSession(ServerPlayerEntity host) {
@@ -160,19 +172,42 @@ public class CompanionManager {
 
         public ServerPlayerEntity getHost() { return host; }
 
-        public boolean spawn() {
-            if (server == null) return false;
+        /**
+         * Spawn the fake player. createFake is called synchronously on the server thread
+         * (required by Carpet), then the lookup happens on a worker thread (with retries
+         * because Carpet's player join is async). The caller's success/failure message
+         * is sent after the lookup completes.
+         *
+         * @param onComplete called on the server thread after spawn succeeds (true) or fails (false)
+         */
+        public void spawnAsync(java.util.function.Consumer<Boolean> onComplete) {
+            if (server == null) { onComplete.accept(false); return; }
             try {
-                // Call CarpetSpawnHelper, which holds the Carpet-dependent code.
-                // This class is only loaded if CARPET_PRESENT is true (checked above).
-                Object obj = CarpetSpawnHelper.spawnFakePlayer(server, host);
-                if (!(obj instanceof PlayerEntity)) return false;
-                fakePlayer = (PlayerEntity) obj;
-                SkinApplier.applyDefaultSkin(fakePlayer);
-                return true;
+                // Step 1: createFake MUST be on the server thread (we already are)
+                CarpetSpawnHelper.createFakePlayer(server, host);
+
+                // Step 2: lookup on a worker thread (createFake's join is async)
+                new Thread(() -> {
+                    try {
+                        ServerPlayerEntity found = CarpetSpawnHelper.lookupFakePlayer(server);
+                        if (found == null) {
+                            server.execute(() -> onComplete.accept(false));
+                            return;
+                        }
+                        fakePlayer = found;
+                        // Apply skin on the server thread (modifies GameProfile)
+                        server.execute(() -> {
+                            SkinApplier.applyDefaultSkin(fakePlayer);
+                            onComplete.accept(true);
+                        });
+                    } catch (Throwable t) {
+                        Quackingly.LOGGER.error("Failed to look up spawned Quackingly", t);
+                        server.execute(() -> onComplete.accept(false));
+                    }
+                }, "Quackingly-Spawn-Lookup").start();
             } catch (Throwable t) {
                 Quackingly.LOGGER.error("Failed to spawn Quackingly", t);
-                return false;
+                onComplete.accept(false);
             }
         }
 

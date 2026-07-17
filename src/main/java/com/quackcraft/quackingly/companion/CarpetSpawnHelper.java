@@ -9,35 +9,67 @@ import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.GameMode;
 
 /**
- * Carpet-dependent spawn logic. This class is only loaded when Carpet is present
- * (the caller checks FabricLoader.isModLoaded("carpet") first). If Carpet is
- * missing, this class never loads and we never get NoClassDefFoundError.
+ * Carpet-dependent spawn logic. This class is only loaded when Carpet is present.
+ *
+ * IMPORTANT: Carpet lowercases the fake-player name ("Quackingly" → "quackingly")
+ * and the join happens ASYNC (on the network thread). So after calling createFake,
+ * we can't immediately look up the player — we need to retry with a delay.
+ *
+ * createFake MUST be called on the server thread (it modifies server state).
+ * lookupFakePlayer can be called from any thread (it just reads the player list).
  */
 public final class CarpetSpawnHelper {
 
+    public static final String FAKE_PLAYER_NAME = "Quackingly";
+    private static final int MAX_LOOKUP_RETRIES = 40;   // 40 × 50ms = 2 seconds max wait
+    private static final long RETRY_DELAY_MS = 50;
+
     private CarpetSpawnHelper() {}
 
-    /** Returns the spawned EntityPlayerMPFake, or null on failure. */
-    public static Object spawnFakePlayer(MinecraftServer server, ServerPlayerEntity host) {
-        try {
-            CarpetSettings.allowSpawningOfflinePlayers = true;
+    /**
+     * Tell Carpet to create the fake player. MUST be called on the server thread.
+     * The player won't be immediately available — use lookupFakePlayer() to wait for it.
+     */
+    public static void createFakePlayer(MinecraftServer server, ServerPlayerEntity host) {
+        CarpetSettings.allowSpawningOfflinePlayers = true;
+        Vec3d pos = new Vec3d(host.getX() + 1, host.getY(), host.getZ() + 1);
+        EntityPlayerMPFake.createFake(
+                FAKE_PLAYER_NAME,
+                server,
+                pos,
+                host.getYaw(), 0f,
+                host.getWorld().getRegistryKey(),
+                GameMode.SURVIVAL,
+                false);
+    }
 
-            Vec3d pos = new Vec3d(host.getX() + 1, host.getY(), host.getZ() + 1);
-            EntityPlayerMPFake.createFake(
-                    "Quackingly",
-                    server,
-                    pos,
-                    host.getYaw(), 0f,
-                    host.getWorld().getRegistryKey(),
-                    GameMode.SURVIVAL,
-                    false);
-
-            // Look up the freshly-spawned fake player by name (createFake returns void)
-            return server.getPlayerManager().getPlayer("Quackingly");
-        } catch (Throwable t) {
-            Quackingly.LOGGER.error("Carpet fake-player spawn failed", t);
-            return null;
+    /**
+     * Look up the fake player by name (case-insensitive, with retries).
+     * Can be called from any thread. Returns null if not found after all retries.
+     */
+    public static ServerPlayerEntity lookupFakePlayer(MinecraftServer server) {
+        for (int i = 0; i < MAX_LOOKUP_RETRIES; i++) {
+            // Exact match first (fast path)
+            ServerPlayerEntity found = server.getPlayerManager().getPlayer(FAKE_PLAYER_NAME);
+            if (found != null) {
+                Quackingly.LOGGER.info("[Quackingly] Fake player found after {} retries.", i);
+                return found;
+            }
+            // Case-insensitive fallback (Carpet lowercases the name)
+            for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) {
+                if (p.getName().getString().equalsIgnoreCase(FAKE_PLAYER_NAME)) {
+                    Quackingly.LOGGER.info("[Quackingly] Fake player found (case-insensitive) after {} retries.", i);
+                    return p;
+                }
+            }
+            try { Thread.sleep(RETRY_DELAY_MS); } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                break;
+            }
         }
+        Quackingly.LOGGER.error("[Quackingly] Fake player '{}' not found after {} retries.",
+                FAKE_PLAYER_NAME, MAX_LOOKUP_RETRIES);
+        return null;
     }
 
     @SuppressWarnings("unchecked")

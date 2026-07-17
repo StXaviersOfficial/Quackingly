@@ -32,8 +32,10 @@ public class Quackingly implements ModInitializer {
     @Override
     public void onInitialize() {
         QuackinglyConfig.load();
-        LOGGER.info("[Quackingly] Initialising v1.2.0. Default provider hint: {}",
-                QuackinglyConfig.get().detectedProvider);
+        String ver = net.fabricmc.loader.api.FabricLoader.getInstance()
+                .getModContainer(MOD_ID).map(c -> c.getMetadata().getVersion().getFriendlyString()).orElse("?");
+        LOGGER.info("[Quackingly] Initialising v{}. Default provider hint: {}",
+                ver, QuackinglyConfig.get().detectedProvider);
 
         // CRITICAL: Register payload types BEFORE registering receivers.
         // If this is skipped, Fabric 1.21.1 crashes with:
