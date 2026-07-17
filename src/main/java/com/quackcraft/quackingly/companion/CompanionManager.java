@@ -312,6 +312,7 @@ public class CompanionManager {
                 case 401: return "API key is invalid. Get a new Groq key at console.groq.com/keys";
                 case 402: return "API quota exhausted. You need to add credits or wait.";
                 case 403: return "API key is forbidden/revoked. Get a new Groq key at console.groq.com/keys";
+                case 404: return "Model not found. Check the model name in Mod Menu → Quackingly → LLM → Model. Use 'llama-3.3-70b-versatile' for Groq.";
                 case 429: return "Rate limited — too many requests. Wait a moment and try again.";
                 case 500: case 502: case 503: return "LLM server error. Try again in a moment.";
                 default:  return "LLM error (HTTP " + status + "). Check console for details.";

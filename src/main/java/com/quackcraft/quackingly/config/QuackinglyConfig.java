@@ -39,6 +39,12 @@ public class QuackinglyConfig {
         if (data.defaultSkinUser == null || data.defaultSkinUser.isBlank()) {
             data.defaultSkinUser = "Quack";
         }
+        // Migration: fix common model name typos from older config files
+        if (data.model != null) {
+            if (data.model.equals("llama-3.3-70b-verseatile")) {
+                data.model = "llama-3.3-70b-versatile";  // fix typo
+            }
+        }
         if (data.model == null || data.model.isBlank()) {
             data.model = ProviderDetector.defaultModelFor(data.detectedProvider);
         }
