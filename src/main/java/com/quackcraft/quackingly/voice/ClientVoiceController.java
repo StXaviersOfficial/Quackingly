@@ -60,23 +60,26 @@ public final class ClientVoiceController {
 
     public static void pressPtt() {
         try {
+            boolean showIndicator = QuackinglyConfig.get().showRecordingIndicator;
             if (ClientMicCapture.isAvailable()) {
-                // Pojav fallback path — capture locally via Java Sound
                 boolean ok = ClientMicCapture.startCapture();
                 if (ok) {
                     pttActive = true;
-                    MinecraftClient.getInstance().player.sendMessage(
-                            Text.literal("● Recording... (release to send)").formatted(Formatting.DARK_RED, Formatting.BOLD));
+                    if (showIndicator) {
+                        MinecraftClient.getInstance().player.sendMessage(
+                                Text.literal("● Recording... (release to send)").formatted(Formatting.DARK_RED, Formatting.BOLD));
+                    }
                 } else {
                     MinecraftClient.getInstance().player.sendMessage(
                             Text.literal("Mic capture failed — use text chat.").formatted(Formatting.RED));
                 }
             } else {
-                // SVC path — tell server to start capturing
                 ClientCompanionPackets.sendVoiceInputStart();
                 pttActive = true;
-                MinecraftClient.getInstance().player.sendMessage(
-                        Text.literal("● Recording... (release to send)").formatted(Formatting.DARK_RED, Formatting.BOLD));
+                if (showIndicator) {
+                    MinecraftClient.getInstance().player.sendMessage(
+                            Text.literal("● Recording... (release to send)").formatted(Formatting.DARK_RED, Formatting.BOLD));
+                }
             }
         } catch (Throwable t) {
             Quackingly.LOGGER.warn("Failed to start PTT", t);

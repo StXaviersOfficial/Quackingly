@@ -86,6 +86,8 @@ public class QuackinglyConfig {
         public int silenceThresholdMs = 600;     // gap in ms to detect end of sentence
         public int minUtteranceMs = 400;         // ignore utterances shorter than this (filters out coughs etc)
         public int maxUtteranceMs = 10000;       // force-transcribe if utterance exceeds this (prevents runaway)
+        public boolean showRecordingIndicator = true; // show "● Recording..." when mic is active
+        public int voiceActivationThreshold = 300; // VAD energy threshold (0-2000, lower = more sensitive)
         public boolean autoSummon = false;
         public boolean followPlayer = true;      // companion AI: follow host
         public boolean lookAtPlayer = true;      // companion AI: face host when close

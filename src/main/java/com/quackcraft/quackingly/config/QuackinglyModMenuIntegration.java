@@ -182,6 +182,19 @@ public class QuackinglyModMenuIntegration implements ModMenuApi {
                 .setTooltip(Text.literal("Force-transcribe if utterance exceeds this — lets Quackingly reply mid-speech on long monologues."))
                 .setSaveConsumer(v -> cfg.maxUtteranceMs = v)
                 .build());
+        voiceIn.addEntry(eb.startBooleanToggle(
+                        Text.literal("Show recording indicator"), cfg.showRecordingIndicator)
+                .setDefaultValue(true)
+                .setTooltip(Text.literal("Show '● Recording...' in chat when the mic is actively capturing."))
+                .setSaveConsumer(v -> cfg.showRecordingIndicator = v)
+                .build());
+        voiceIn.addEntry(eb.startIntField(
+                        Text.literal("Voice activation threshold"), cfg.voiceActivationThreshold)
+                .setDefaultValue(300)
+                .setMin(0).setMax(2000)
+                .setTooltip(Text.literal("VAD energy threshold. Lower = more sensitive (picks up quiet speech but more background noise). Higher = less sensitive (needs louder speech). Like SVC's microphone slider."))
+                .setSaveConsumer(v -> cfg.voiceActivationThreshold = v)
+                .build());
         voiceIn.addEntry(eb.startStrField(
                         Text.literal("STT Model (Groq Whisper)"), cfg.sttModel)
                 .setDefaultValue("whisper-large-v3")

@@ -43,8 +43,7 @@ public final class ClientMicCapture {
     private static long captureStartTime;
     private static long lastLoudAudioTime;
 
-    // VAD thresholds
-    private static final double VAD_ENERGY_THRESHOLD = 300.0;  // RMS threshold for speech
+    // VAD thresholds (silence gap and min/max are fixed; energy threshold is configurable)
     private static final long VAD_SILENCE_MS = 600;            // silence gap to trigger send
     private static final long MIN_UTTERANCE_MS = 400;           // ignore very short clips
     private static final long MAX_UTTERANCE_MS = 10000;         // force send if too long
@@ -147,7 +146,7 @@ public final class ClientMicCapture {
 
     public static boolean isCapturing() { return capturing; }
 
-    /** Simple energy-based VAD: compute RMS of the audio chunk. */
+    /** Simple energy-based VAD: compute RMS of the audio chunk. Uses configurable threshold. */
     private static boolean isSpeech(byte[] data, int len) {
         if (len < 2) return false;
         long sum = 0;
@@ -157,7 +156,9 @@ public final class ClientMicCapture {
             sum += (long) sample * sample;
         }
         double rms = Math.sqrt((double) sum / samples);
-        return rms > VAD_ENERGY_THRESHOLD;
+        // Use the configurable threshold from QuackinglyConfig
+        double threshold = com.quackcraft.quackingly.config.QuackinglyConfig.get().voiceActivationThreshold;
+        return rms > threshold;
     }
 
     /** Build a 16kHz mono 16-bit WAV from raw PCM. */
