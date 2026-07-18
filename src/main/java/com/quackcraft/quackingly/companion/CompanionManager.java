@@ -80,10 +80,12 @@ public class CompanionManager {
                 host.sendMessage(Text.translatable("chat.quackingly.summoned").formatted(Formatting.AQUA));
                 SilenceWatcher.onSessionStart(host.getUuid());
                 // Warn if voice input won't work (Opus broken on this platform)
-                if (!com.quackcraft.quackingly.voice.QuackinglyVoiceChatPlugin.isOpusAvailable()) {
-                    host.sendMessage(Text.literal("⚠ Voice input unavailable on this platform (Opus native lib missing). " +
-                            "Use text chat to talk to Quackingly. Voice output (TTS) still works.")
-                            .formatted(Formatting.YELLOW));
+                try {
+                    if (!com.quackcraft.quackingly.voice.QuackinglyVoiceChatPlugin.isOpusAvailable()) {
+                        host.sendMessage(Text.literal("⚠ SVC voice input unavailable. Using built-in mic capture or text chat.").formatted(Formatting.YELLOW));
+                    }
+                } catch (NoClassDefFoundError svc404) {
+                    // SVC not installed — that's fine, Java Sound fallback or text chat works
                 }
             } else {
                 sessions.remove(host.getUuid());

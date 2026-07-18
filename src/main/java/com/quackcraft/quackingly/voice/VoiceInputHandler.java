@@ -34,9 +34,7 @@ public final class VoiceInputHandler {
     public static void onStartRecording(ServerPlayerEntity player) {
         try {
             if (!isSvcAvailable()) {
-                player.sendMessage(Text.literal(
-                        "Simple Voice Chat is not installed — voice input unavailable.")
-                        .formatted(Formatting.RED));
+                // SVC not installed — client-side Java Sound capture handles this
                 return;
             }
             if (!com.quackcraft.quackingly.config.QuackinglyConfig.get().voiceInputEnabled) {
@@ -52,6 +50,8 @@ public final class VoiceInputHandler {
             QuackinglyVoiceChatPlugin.startRecording(player.getUuid());
             player.sendMessage(Text.literal("● Recording... (release to send)")
                     .formatted(Formatting.DARK_RED, Formatting.BOLD));
+        } catch (NoClassDefFoundError svc404) {
+            // SVC not installed — client-side capture handles voice
         } catch (Throwable t) {
             Quackingly.LOGGER.warn("[Quackingly] Failed to start PTT recording", t);
         }
@@ -65,6 +65,8 @@ public final class VoiceInputHandler {
         final byte[] wavBytes;
         try {
             wavBytes = QuackinglyVoiceChatPlugin.stopRecording(player.getUuid());
+        } catch (NoClassDefFoundError svc404) {
+            return; // SVC not installed — client-side capture handles this
         } catch (Throwable t) {
             Quackingly.LOGGER.warn("[Quackingly] Failed to stop PTT recording", t);
             return;
@@ -116,7 +118,11 @@ public final class VoiceInputHandler {
             player.sendMessage(Text.literal("🔇 Quackingly is now muted (always-on listening paused)")
                     .formatted(Formatting.YELLOW));
         } else {
-            QuackinglyVoiceChatPlugin.startRecording(uuid);
+            try {
+                QuackinglyVoiceChatPlugin.startRecording(uuid);
+            } catch (NoClassDefFoundError svc404) {
+                // SVC not installed — client-side capture handles this
+            }
             player.sendMessage(Text.literal("🎤 Quackingly is listening (always-on)")
                     .formatted(Formatting.AQUA));
         }

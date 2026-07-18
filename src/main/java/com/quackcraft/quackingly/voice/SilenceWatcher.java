@@ -65,7 +65,11 @@ public final class SilenceWatcher {
         if (isMuted) {
             muted.put(playerUuid, true);
             // Stop any active collector
-            QuackinglyVoiceChatPlugin.stopRecording(playerUuid);
+            try {
+                QuackinglyVoiceChatPlugin.stopRecording(playerUuid);
+            } catch (NoClassDefFoundError svc404) {
+                // SVC not installed — nothing to stop
+            }
             utteranceStartTime.remove(playerUuid);
         } else {
             muted.remove(playerUuid);
@@ -78,19 +82,26 @@ public final class SilenceWatcher {
 
     /** Called when a player's Quackingly session starts — begin always-on capture. */
     public static void onSessionStart(UUID playerUuid) {
-        // Check if Opus is available — if not, voice input can't work (Pojav/Android)
-        if (!QuackinglyVoiceChatPlugin.isOpusAvailable()) {
-            Quackingly.LOGGER.warn("[Quackingly] Not starting voice capture for {} — Opus native lib unavailable.", playerUuid);
-            return;
-        }
-        if (!muted.containsKey(playerUuid)) {
-            QuackinglyVoiceChatPlugin.startRecording(playerUuid);
+        try {
+            if (!QuackinglyVoiceChatPlugin.isOpusAvailable()) {
+                Quackingly.LOGGER.debug("[Quackingly] SVC/Opus not available for {} — client-side capture handles voice.", playerUuid);
+                return;
+            }
+            if (!muted.containsKey(playerUuid)) {
+                QuackinglyVoiceChatPlugin.startRecording(playerUuid);
+            }
+        } catch (NoClassDefFoundError svc404) {
+            // SVC not installed — client-side Java Sound capture handles voice input
         }
     }
 
     /** Called when a player's Quackingly session ends — stop capture. */
     public static void onSessionEnd(UUID playerUuid) {
-        QuackinglyVoiceChatPlugin.stopRecording(playerUuid);
+        try {
+            QuackinglyVoiceChatPlugin.stopRecording(playerUuid);
+        } catch (NoClassDefFoundError svc404) {
+            // SVC not installed — nothing to stop
+        }
         utteranceStartTime.remove(playerUuid);
     }
 
@@ -121,7 +132,12 @@ public final class SilenceWatcher {
                     UUID uuid = player.getUuid();
 
                     if (muted.containsKey(uuid)) continue;
-                    if (!QuackinglyVoiceChatPlugin.isRecording(uuid)) continue;
+                    // Guard all SVC plugin calls — if SVC isn't installed, skip server-side VAD
+                    boolean isRec;
+                    try {
+                        isRec = QuackinglyVoiceChatPlugin.isRecording(uuid);
+                    } catch (NoClassDefFoundError svc404) { continue; }
+                    if (!isRec) continue;
 
                     long sinceLast = QuackinglyVoiceChatPlugin.msSinceLastPacket(uuid);
                     int sampleCount = QuackinglyVoiceChatPlugin.getSampleCount(uuid);
@@ -147,7 +163,10 @@ public final class SilenceWatcher {
 
                     if (silenceBoundary || maxLength) {
                         // Sentence ended (or max length hit) — snapshot, reset, transcribe
-                        byte[] wav = QuackinglyVoiceChatPlugin.snapshotAndReset(uuid);
+                        byte[] wav;
+                        try {
+                            wav = QuackinglyVoiceChatPlugin.snapshotAndReset(uuid);
+                        } catch (NoClassDefFoundError svc404) { continue; }
                         utteranceStartTime.remove(uuid);
 
                         if (wav == null || wav.length == 0) continue;

@@ -4,7 +4,6 @@ import com.quackcraft.quackingly.client.network.ClientCompanionPackets;
 import com.quackcraft.quackingly.client.screen.ConfirmSummonScreen;
 import com.quackcraft.quackingly.client.screen.WorldPickerScreen;
 import com.quackcraft.quackingly.config.QuackinglyConfig;
-import com.quackcraft.quackingly.voice.QuackinglyVoiceChatPlugin;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
@@ -91,16 +90,14 @@ public class QuackinglyClient implements ClientModInitializer {
                     });
                 });
 
-        // Make sure the SVC plugin class loads early so SVC picks it up
-        try {
-            Class.forName(QuackinglyVoiceChatPlugin.class.getName());
-        } catch (ClassNotFoundException e) {
-            Quackingly.LOGGER.warn("Voice chat plugin class not found", e);
-        }
+        // SVC plugin discovery: SVC scans fabric.mod.json's custom entry
+        // "quackingly:voicechat_plugin" and loads the class itself.
+        // We do NOT force-load it here — that would crash if SVC isn't installed
+        // (NoClassDefFoundError: VoicechatPlugin).
 
         // Check if client-side mic capture is available (Pojav fallback)
         if (com.quackcraft.quackingly.voice.ClientMicCapture.isAvailable()) {
-            Quackingly.LOGGER.info("[Quackingly] Client-side mic capture available (Java Sound API). Will use as fallback if Opus is broken.");
+            Quackingly.LOGGER.info("[Quackingly] Client-side mic capture available (Java Sound API). Voice input will work without SVC.");
         } else {
             Quackingly.LOGGER.warn("[Quackingly] Client-side mic capture NOT available. Voice input will require SVC + Opus.");
         }
